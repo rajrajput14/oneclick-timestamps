@@ -1,4 +1,5 @@
 import { SignIn } from '@clerk/nextjs'
+export const dynamic = 'force-dynamic';
 import Navbar from '@/components/layout/Navbar'
 
 export default function SignInPage() {
