@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+export const dynamic = 'force-dynamic';
+import { getCurrentUser } from '@/lib/auth/user';
 
 /**
  * Manual subscription activation endpoint for testing
@@ -10,19 +11,23 @@ import { eq } from 'drizzle-orm';
  */
 export async function POST(req: NextRequest) {
     try {
-        const { userId: clerkUserId } = await auth();
+        const user = await getCurrentUser();
 
-        if (!clerkUserId) {
+        if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // Find user in database
-        const user = await db.query.users.findFirst({
-            where: eq(users.clerkId, clerkUserId),
+        if ('error' in user) {
+            return NextResponse.json({ error: 'Database error', details: user.details }, { status: 500 });
+        }
+
+        // Find user in database using the authenticated user's ID
+        const dbUser = await db.query.users.findFirst({
+            where: eq(users.clerkId, user.clerkId),
         });
 
-        if (!user) {
-            return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        if (!dbUser) {
+            return NextResponse.json({ error: 'User not found in database' }, { status: 404 });
         }
 
         // Activate Pro subscription
@@ -35,9 +40,9 @@ export async function POST(req: NextRequest) {
                 minutesUsed: 0,
                 updatedAt: new Date(),
             })
-            .where(eq(users.id, user.id));
+            .where(eq(users.id, dbUser.id));
 
-        console.log('✅ Manually activated Pro for user:', user.email);
+        console.log('✅ Manually activated Pro for user:', dbUser.email);
 
         return NextResponse.json({
             success: true,
