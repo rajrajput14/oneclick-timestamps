@@ -4,13 +4,11 @@ import { redirect } from 'next/navigation';
 export const dynamic = 'force-dynamic';
 import CreateProjectForm from '@/components/dashboard/CreateProjectForm';
 import RecentProjects from '@/components/dashboard/RecentProjects';
-import SyncSubscriptionButton from '@/components/dashboard/SyncSubscriptionButton';
 import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
-import { Sparkles, ShieldCheck, Zap } from 'lucide-react';
 import PaymentRefresh from '@/components/dashboard/PaymentRefresh';
+import BillingUsageMetrics from '@/components/dashboard/BillingUsageMetrics';
 
 export default async function DashboardPage(props: { searchParams: Promise<any> }) {
     const resolvedSearchParams = await props.searchParams;
@@ -38,11 +36,6 @@ export default async function DashboardPage(props: { searchParams: Promise<any> 
 
     const isPaymentSuccess = resolvedSearchParams?.payment === 'success';
 
-    const isPaidUser = user.subscriptionStatus === 'active' || user.subscriptionStatus === 'trialing' || user.subscriptionStatus === 'on_trial';
-    const minutesUsed = user.minutesUsed || 0;
-    const totalMinutes = (user.minutesLimit || 0) + (user.addonMinutes || 0);
-    const minutesRemaining = Math.max(0, totalMinutes - minutesUsed);
-
     return (
         <div className="max-w-6xl mx-auto space-y-12 md:space-y-24 pb-32 font-outfit animate-in fade-in duration-1000">
             {isPaymentSuccess && <PaymentRefresh />}
@@ -61,81 +54,22 @@ export default async function DashboardPage(props: { searchParams: Promise<any> 
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <Badge variant={isPaidUser ? 'success' : 'default'} className="px-6 md:px-8 py-2 md:py-3 text-[10px] md:text-xs font-bold tracking-wide border-border/50">
-                        {isPaidUser ? <Sparkles className="w-3 h-3 md:w-4 md:h-4 mr-2 md:mr-3" /> : <ShieldCheck className="w-3 h-3 md:w-4 md:h-4 mr-2 md:mr-3" />}
-                        {isPaidUser ? 'PRO TIER ACTIVE' : 'FREE TIER'}
-                    </Badge>
+                    {/* Badge moved inside BillingUsageMetrics for reactive updates */}
                 </div>
             </div>
 
-            {/* Metrics Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10">
-                <Card variant="glass" className="p-6 md:p-12 relative overflow-hidden group border-border shadow-2xl">
-                    <div className="absolute -right-20 -top-20 w-80 h-80 bg-indigo-600/5 blur-[100px] rounded-full group-hover:bg-indigo-600/10 transition-all duration-1000" />
-
-                    <div className="relative z-10 flex flex-col h-full">
-                        <div className="flex items-center gap-3 md:gap-4 mb-8 md:mb-12">
-                            <Zap className="w-3.5 h-3.5 md:w-4 md:h-4 text-indigo-500" />
-                            <p className="text-[10px] md:text-[11px] font-bold uppercase tracking-wide text-muted-foreground opacity-80">Video Usage</p>
-                        </div>
-
-                        <div className="flex items-baseline gap-4 md:gap-6 mb-12 md:mb-16">
-                            <span className="text-6xl md:text-8xl font-black tracking-tighter text-foreground leading-none drop-shadow-2xl">
-                                {minutesUsed}
-                            </span>
-                            <div className="flex flex-col">
-                                <span className="text-2xl md:text-4xl font-bold text-muted-foreground/30 italic">/ {totalMinutes} Min</span>
-                                <span className="text-[9px] md:text-[10px] font-black text-indigo-500 uppercase tracking-widest mt-1">
-                                    {user.minutesLimit} Base + {user.addonMinutes} Add-on
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="mb-4">
-                            <p className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-2">
-                                {minutesRemaining} Minutes Remaining
-                            </p>
-                            <div className="w-full h-1 bg-secondary rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-indigo-500 transition-all duration-1000"
-                                    style={{ width: `${Math.min(100, (minutesUsed / (totalMinutes || 1)) * 100)}%` }}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="mt-8 md:mt-auto">
-                            <Link href="/pricing" className="inline-block w-full">
-                                <Button variant="primary" size="lg" className="w-full text-sm md:text-base tracking-wide shadow-indigo-500/40">
-                                    Buy More Minutes
-                                </Button>
-                            </Link>
-                        </div>
-                    </div>
-                </Card>
-
-                <Card variant="glass" className="p-6 md:p-12 flex flex-col justify-between relative overflow-hidden group border-border shadow-2xl min-h-[300px] md:min-h-auto">
-                    <div className="absolute -left-20 -bottom-20 w-80 h-80 bg-purple-600/5 blur-[100px] rounded-full group-hover:bg-purple-600/10 transition-all duration-1000" />
-
-                    <div className="relative z-10">
-                        <div className="flex items-center gap-3 md:gap-4 mb-8 md:mb-12">
-                            <ShieldCheck className="w-3.5 h-3.5 md:w-4 md:h-4 text-purple-500" />
-                            <p className="text-[10px] md:text-[11px] font-bold uppercase tracking-wide text-muted-foreground opacity-80">Account Status</p>
-                        </div>
-                        <h3 className="text-4xl md:text-5xl font-black uppercase tracking-tighter mb-4 text-foreground leading-[1.1]">
-                            {isPaidUser ? 'Creator' : 'Free'} Plan
-                        </h3>
-                    </div>
-
-                    <div className="pt-8 md:pt-12 border-t border-border flex items-center justify-between relative z-10">
-                        <SyncSubscriptionButton />
-                        {isPaidUser ? (
-                            <Badge variant="success" className="px-4 md:px-6 py-2 tracking-wide text-[10px] md:text-xs">SUB ACTIVE</Badge>
-                        ) : (
-                            <p className="text-[9px] md:text-[10px] font-bold uppercase tracking-wide text-muted-foreground/60">TIER 1 CLOUD</p>
-                        )}
-                    </div>
-                </Card>
-            </div>
+            {/* Metrics Grid (Now reactive via client component) */}
+            <BillingUsageMetrics
+                initialData={{
+                    plan: user.subscriptionPlan || 'Free',
+                    status: user.subscriptionStatus || 'inactive',
+                    minutesLimit: user.minutesLimit || 0,
+                    minutesUsed: user.minutesUsed || 0,
+                    addonMinutes: user.addonMinutes || 0,
+                    totalAvailable: (user.minutesLimit || 0) + (user.addonMinutes || 0) - (user.minutesUsed || 0),
+                    billingCycleEnd: user.billingCycleEnd?.toISOString() || null
+                }}
+            />
 
             {/* Core Workflow */}
             <div className="space-y-12 md:space-y-24">
@@ -148,7 +82,10 @@ export default async function DashboardPage(props: { searchParams: Promise<any> 
                         </div>
                     </div>
                     <Card variant="glass" className="p-6 md:p-12 border-border shadow-2xl overflow-hidden">
-                        <CreateProjectForm usageAllowed={minutesRemaining > 0} minutesRemaining={minutesRemaining} />
+                        <CreateProjectForm
+                            usageAllowed={((user.minutesLimit || 0) + (user.addonMinutes || 0) - (user.minutesUsed || 0)) > 0}
+                            minutesRemaining={(user.minutesLimit || 0) + (user.addonMinutes || 0) - (user.minutesUsed || 0)}
+                        />
                     </Card>
                 </div>
 

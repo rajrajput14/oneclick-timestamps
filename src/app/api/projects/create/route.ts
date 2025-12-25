@@ -113,11 +113,21 @@ export async function POST(req: NextRequest) {
                     const PHASE1_DURATION = 1200; // 20 minutes
                     const isLongVideo = durationSeconds > PHASE1_DURATION;
 
-                    // PHASE 1: Fast Results
+                    await updateProgress(15, 'Validating video signal...');
+
+                    // PHASE 1: Audio Extraction
+                    await updateProgress(25, 'Extracting audio layers...');
+
+                    // PHASE 2: Speech to Text
+                    await updateProgress(45, isLongVideo ? 'Processing initial segment...' : 'Converting speech to text...');
+
                     const phase1Result = await runSTTPipeline(videoId!, updateProgress, {
                         durationSeconds: isLongVideo ? PHASE1_DURATION : undefined,
                         descriptionPrefix: isLongVideo ? '[Phase 1] ' : ''
                     });
+
+                    // PHASE 3: AI Structuring
+                    await updateProgress(75, 'Structuring timestamps with AI...');
 
                     // Save Phase 1 timestamps
                     if (phase1Result.timestamps && phase1Result.timestamps.length > 0) {
@@ -133,6 +143,7 @@ export async function POST(req: NextRequest) {
 
                     // If short video, we are done
                     if (!isLongVideo) {
+                        await updateProgress(95, 'Finalizing project...');
                         await db.update(projects)
                             .set({
                                 status: 'completed',
@@ -145,21 +156,12 @@ export async function POST(req: NextRequest) {
                             .where(eq(projects.id, project.id));
 
                         await deductMinutes(user.id, phase1Result.processedSeconds);
+                        console.log(`[Background] Short project ${project.id} completed successfully`);
                         return;
                     }
 
-                    // PHASE 2: Background Refinement
-                    // Intermediate update to show Phase 1 is ready
-                    await db.update(projects)
-                        .set({
-                            status: 'completed', // "Completed" so user can see and copy results
-                            progress: 50,
-                            statusDescription: 'Initial results ready. Refining in background...',
-                            language: phase1Result.language,
-                            transcript: 'Phase 1 transcript generated.',
-                            updatedAt: new Date()
-                        })
-                        .where(eq(projects.id, project.id));
+                    // PHASE 4: Background Refinement for long videos
+                    await updateProgress(85, 'Initial timestamps ready. Refining full video...');
 
                     console.log(`[Background] Phase 1 for ${project.id} complete. Starting Phase 2.`);
 

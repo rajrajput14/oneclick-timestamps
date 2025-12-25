@@ -24,13 +24,39 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
     const [projectId, setProjectId] = useState<string | null>(null);
     const [progress, setProgress] = useState<ProgressState>({
         percent: 0,
-        description: 'Initialising synthesis...',
-        status: 'processing'
+        description: 'Waiting for signal...',
+        status: 'idle'
     });
+
+    // VISUAL PROGRESS: This decoupled state ensures the UI always feels alive
+    const [visualPercent, setVisualPercent] = useState(0);
+
+    // Auto-increment logic: if backend is slow, we slowly "creep" the bar
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (view === 'processing' && visualPercent < 90) {
+            interval = setInterval(() => {
+                setVisualPercent(prev => {
+                    const increment = prev < 50 ? 0.5 : (prev < 80 ? 0.2 : 0.1);
+                    return Math.min(90, prev + increment);
+                });
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [view, visualPercent]);
+
+    // Sync visual percent when backend makes significant leaps
+    // but only if backend is ahead of our visual estimate
+    useEffect(() => {
+        if (progress.percent > visualPercent) {
+            setVisualPercent(progress.percent);
+        }
+    }, [progress.percent, visualPercent]);
 
     const startProcessing = async (input: string | File) => {
         setView('processing');
         setError(null);
+        setVisualPercent(5);
         setProgress({
             percent: 5,
             description: typeof input === 'string' ? 'Checking video link...' : 'Verifying transcript file...',
@@ -94,12 +120,14 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
 
                 if (project.status === 'completed') {
                     clearInterval(pollInterval);
-                    setView('success');
-                    // Short delay for the user to see the "success" state before redirecting
+                    setVisualPercent(100);
                     setTimeout(() => {
-                        router.push(`/dashboard/project/${projectId}`);
-                        router.refresh();
-                    }, 1500);
+                        setView('success');
+                        setTimeout(() => {
+                            router.push(`/dashboard/project/${projectId}`);
+                            router.refresh();
+                        }, 1500);
+                    }, 500);
                 } else if (project.status === 'failed') {
                     clearInterval(pollInterval);
                     setView('error');
@@ -111,9 +139,8 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
                 }
             } catch (err: any) {
                 console.error('Polling error:', err);
-                // We don't immediately switch to error on a single poll failure to be resilient
             }
-        }, 2000);
+        }, 3000);
 
         return () => clearInterval(pollInterval);
     }, [projectId, view, router]);
@@ -159,7 +186,7 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
             )}
 
             {view === 'processing' && (
-                <ProcessingView progress={progress} />
+                <ProcessingView progress={{ ...progress, percent: visualPercent }} />
             )}
 
             {view === 'error' && error && (
