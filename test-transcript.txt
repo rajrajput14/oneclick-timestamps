@@ -1,0 +1,15 @@
+# OneClick Timestamps - Test Transcript
+
+This is a sample transcript for testing the timestamp generation feature.
+
+The application uses Google Gemini AI to analyze video transcripts and generate meaningful chapter timestamps. This process involves several key steps that work together to create professional-quality timestamps.
+
+First, the system analyzes the semantic content of the transcript to understand the main topics being discussed. This is different from simply dividing the content by time intervals, as it focuses on natural topic boundaries and transitions.
+
+Next, the AI identifies where one topic ends and another begins. This semantic segmentation ensures that each chapter represents a cohesive discussion point rather than an arbitrary time slice.
+
+The system then generates clear, descriptive titles for each chapter. These titles are designed to be SEO-friendly and give viewers a clear idea of what each section covers. Generic titles like "Part 1" or "Introduction" are avoided in favor of specific, meaningful descriptions.
+
+Finally, the timestamps are formatted in YouTube's standard format, making them ready to paste directly into video descriptions. The system ensures that each chapter meets the minimum duration requirement and maintains chronological order.
+
+This entire process happens in seconds, saving content creators hours of manual work while producing professional results that enhance viewer experience and video discoverability.
