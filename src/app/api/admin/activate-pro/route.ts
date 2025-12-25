@@ -29,9 +29,10 @@ export async function POST(req: NextRequest) {
         await db
             .update(users)
             .set({
+                subscriptionPlan: 'Pro Creator',
                 subscriptionStatus: 'active',
-                usageLimit: -1,
-                usageCount: 0,
+                minutesLimit: 1500,
+                minutesUsed: 0,
                 updatedAt: new Date(),
             })
             .where(eq(users.id, user.id));
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
             user: {
                 email: user.email,
                 subscriptionStatus: 'active',
-                usageLimit: -1,
+                minutesLimit: 1500,
             },
         });
     } catch (error) {

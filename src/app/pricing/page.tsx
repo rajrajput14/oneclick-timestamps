@@ -4,36 +4,79 @@ import Navbar from '@/components/layout/Navbar';
 import { useUser } from '@clerk/nextjs';
 import { useState } from 'react';
 import Link from 'next/link';
+import { CHECKOUT_LINKS } from '../../../config/urls';
+import { getCheckoutUrl } from '@/lib/payments/lemonsqueezy';
 
 export default function PricingPage() {
     const { isSignedIn, user } = useUser();
     const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
 
-    const baseCheckoutUrl = 'https://raj-saas.lemonsqueezy.com/buy/8ea50f2e-496c-4129-aef5-9fa698b64070';
-    const checkoutUrl = user
-        ? `${baseCheckoutUrl}?checkout[email]=${encodeURIComponent(user.primaryEmailAddress?.emailAddress || '')}&checkout[custom][user_id]=${user.id}`
-        : baseCheckoutUrl;
+    const handleCheckout = (url: string, metadata: any = {}) => {
+        if (!isSignedIn) {
+            window.location.href = '/sign-in';
+            return;
+        }
+        window.location.href = getCheckoutUrl(url, user.id, metadata);
+    };
 
     const plans = [
         {
-            name: 'Free Explorer',
+            name: 'Free',
             price: '0',
-            description: 'For curious creators',
-            features: ['3 generations / mo', 'Standard processing', 'Auto-language'],
-            cta: 'Get Started',
+            description: 'Try it for free',
+            features: [
+                '60 minutes total',
+                'Perfect timestamps',
+                'All languages included'
+            ],
+            cta: 'Start Free',
             ctaHref: isSignedIn ? '/dashboard' : '/sign-up',
             highlighted: false
         },
         {
-            name: 'Creator Pro',
-            price: billingCycle === 'monthly' ? '9' : '89',
+            name: 'Creator',
+            price: billingCycle === 'monthly' ? '299' : '3299',
             period: billingCycle === 'monthly' ? '/mo' : '/yr',
-            description: 'For power content machines',
-            features: ['UNLIMITED generations', 'Priority AI processing', 'Batch support', 'Early access'],
-            cta: 'Unlock Everything',
-            ctaHref: checkoutUrl,
+            description: 'For active creators',
+            features: [
+                billingCycle === 'monthly' ? '500 minutes per month' : '6,000 minutes per year',
+                'Priority processing',
+                'Premium support',
+                'Unlimited projects'
+            ],
+            cta: 'Upgrade to Creator',
+            checkoutUrl: CHECKOUT_LINKS.creator,
+            metadata: {
+                plan_name: 'Creator',
+                minutes_limit: billingCycle === 'monthly' ? 500 : 6000
+            },
             highlighted: true
+        },
+        {
+            name: 'Pro Creator',
+            price: billingCycle === 'monthly' ? '899' : '9599',
+            period: billingCycle === 'monthly' ? '/mo' : '/yr',
+            description: 'For power users',
+            features: [
+                billingCycle === 'monthly' ? '1,500 minutes per month' : '18,000 minutes per year',
+                'Fastest AI models',
+                'Early access to features',
+                'Personalized help'
+            ],
+            cta: 'Upgrade to Pro',
+            checkoutUrl: CHECKOUT_LINKS.pro,
+            metadata: {
+                plan_name: 'Pro Creator',
+                minutes_limit: billingCycle === 'monthly' ? 1500 : 18000
+            },
+            highlighted: false
         }
+    ];
+
+    const addons = [
+        { name: '+100 Minutes', price: '79', checkoutUrl: CHECKOUT_LINKS.addon_100, metadata: { minutes: 100, type: 'addon' } },
+        { name: '+500 Minutes', price: '299', checkoutUrl: CHECKOUT_LINKS.addon_500, metadata: { minutes: 500, type: 'addon' } },
+        { name: '+1000 Minutes', price: '549', checkoutUrl: CHECKOUT_LINKS.addon_1000, metadata: { minutes: 1000, type: 'addon' } }
     ];
 
     return (
@@ -42,12 +85,13 @@ export default function PricingPage() {
 
             <main className="max-w-6xl mx-auto px-4 pt-24 text-center">
                 <div className="inline-block px-6 py-2 rounded-full glass pricing-badge uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 mb-12 shadow-sm">
-                    Flexible Investment
+                    Pricing
                 </div>
 
                 <h1 className="pricing-hero-heading mb-16 text-foreground drop-shadow-sm">
-                    Transparent <span className="text-indigo-600 dark:text-indigo-400 italic">Value</span>
+                    Simple pricing for <span className="text-indigo-600 dark:text-indigo-400 italic">creators</span>
                 </h1>
+                <p className="text-xl text-muted-foreground mb-20">Pay only for what you use. No hidden charges.</p>
 
                 {/* Billing Toggle - Glass style */}
                 <div className="flex justify-center items-center gap-6 mb-20">
@@ -62,7 +106,7 @@ export default function PricingPage() {
                 </div>
 
                 {/* Plans Grid */}
-                <div className="grid md:grid-cols-2 gap-12 max-w-5xl mx-auto">
+                <div className="grid md:grid-cols-3 gap-8 max-w-7xl mx-auto">
                     {plans.map((plan, i) => (
                         <div
                             key={i}
@@ -73,7 +117,7 @@ export default function PricingPage() {
 
                             <h3 className="pricing-plan-title mb-4 relative z-10">{plan.name}</h3>
                             <div className="flex items-baseline gap-1 mb-6 relative z-10">
-                                <span className="pricing-amount drop-shadow-sm">${plan.price}</span>
+                                <span className="pricing-amount drop-shadow-sm">₹{plan.price}</span>
                                 {plan.period && <span className="text-muted-foreground uppercase pricing-period tracking-widest">{plan.period}</span>}
                             </div>
                             <p className="pricing-description text-muted-foreground mb-12 relative z-10">{plan.description}</p>
@@ -89,17 +133,56 @@ export default function PricingPage() {
                                 ))}
                             </ul>
 
-                            <Link
-                                href={plan.ctaHref}
-                                className={`w-full py-5 rounded-2xl pricing-cta uppercase tracking-widest transition-all relative z-10 shadow-lg ${plan.highlighted
-                                    ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-500/20'
-                                    : 'glass-darker text-foreground hover:bg-secondary'
-                                    }`}
-                            >
-                                {plan.cta}
-                            </Link>
+                            {plan.name === 'Free' ? (
+                                <Link
+                                    href={plan.ctaHref || '/dashboard'}
+                                    className={`w-full py-5 rounded-2xl text-center pricing-cta uppercase tracking-widest transition-all relative z-10 shadow-lg ${plan.highlighted
+                                        ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-500/20'
+                                        : 'glass-darker text-foreground hover:bg-secondary'
+                                        }`}
+                                >
+                                    {plan.cta}
+                                </Link>
+                            ) : (
+                                <button
+                                    onClick={() => handleCheckout(plan.checkoutUrl || '', plan.metadata)}
+                                    className={`w-full py-5 rounded-2xl pricing-cta uppercase tracking-widest transition-all relative z-10 shadow-lg ${plan.highlighted
+                                        ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-500/20'
+                                        : 'glass-darker text-foreground hover:bg-secondary'
+                                        }`}
+                                >
+                                    {plan.cta}
+                                </button>
+                            )}
                         </div>
                     ))}
+                </div>
+
+                {/* Add-ons Section */}
+                <div className="mt-32 pb-24">
+                    <div className="inline-block px-6 py-2 rounded-full glass pricing-badge uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 mb-12 shadow-sm">
+                        Extra Minutes
+                    </div>
+                    <h2 className="text-4xl font-black tracking-tighter text-foreground mb-16">
+                        Add-on <span className="text-indigo-600 dark:text-indigo-400 italic">Credit Packs</span>
+                    </h2>
+
+                    <div className="grid sm:grid-cols-3 gap-8 max-w-5xl mx-auto">
+                        {addons.map((addon, idx) => (
+                            <div key={idx} className="p-10 rounded-[2.5rem] glass hover:-translate-y-2 transition-all duration-500 shadow-xl flex flex-col items-center">
+                                <p className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-4">One-time purchase</p>
+                                <h3 className="text-2xl font-black tracking-tighter text-foreground mb-6">{addon.name}</h3>
+                                <div className="text-5xl font-black tracking-tighter mb-8 text-foreground">₹{addon.price}</div>
+                                <button
+                                    onClick={() => handleCheckout(addon.checkoutUrl, addon.metadata)}
+                                    className="w-full py-4 rounded-xl glass-darker text-xs font-black uppercase tracking-widest hover:bg-secondary transition-all shadow-md"
+                                >
+                                    Buy Now
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                    <p className="mt-12 text-muted-foreground text-sm font-medium">Add-on minutes never expire and are used after plan minutes.</p>
                 </div>
             </main>
         </div>

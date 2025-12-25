@@ -42,3 +42,14 @@ next-env.d.ts
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# transient player scripts
+*-player-script.js
+
+# binaries
+/bin/
+
+# secrets
+service-account.json
+speech-to-text-service.json
+config/*.json

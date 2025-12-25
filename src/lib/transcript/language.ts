@@ -15,7 +15,7 @@ export async function detectLanguage(text: string): Promise<{
         const sample = text.substring(0, 1000); // Use first 1000 chars for detection
 
         // Use gemini-1.5-flash instead of gemini-pro
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' }, { apiVersion: 'v1' });
 
         const prompt = `You are a language detection expert. Analyze the text and determine:
 1. Primary language name (e.g., "English", "Spanish", "Hindi")

@@ -94,7 +94,7 @@ export default function HomePage() {
       </main>
 
       <footer className="py-20 text-center relative border-t border-border mt-32">
-        <p className="text-[10px] font-black uppercase tracking-[1em] opacity-30">OneClick Timestamps © 2025</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.5em] opacity-30">Made for creators. Built for speed.</p>
       </footer>
     </div>
   );

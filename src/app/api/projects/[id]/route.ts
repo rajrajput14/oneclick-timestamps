@@ -11,9 +11,11 @@ import { eq, and, desc } from 'drizzle-orm';
  */
 export async function GET(
     req: NextRequest,
-    { params }: { params: { id: string } }
+    context: { params: Promise<{ id: string }> }
 ) {
+    console.log(`[API/Project] GET Request for ID`);
     try {
+        const { id } = await context.params;
         const { userId: clerkUserId } = await auth();
         if (!clerkUserId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -27,7 +29,7 @@ export async function GET(
         // Fetch project with timestamps
         const project = await db.query.projects.findFirst({
             where: and(
-                eq(projects.id, params.id),
+                eq(projects.id, id),
                 eq(projects.userId, user.id)
             ),
             with: {
@@ -41,7 +43,14 @@ export async function GET(
             return NextResponse.json({ error: 'Project not found' }, { status: 404 });
         }
 
-        return NextResponse.json(project);
+        // Explicitly map as some environments/configs might return the object differently
+        return NextResponse.json({
+            ...project,
+            progress: project.progress,
+            statusDescription: project.statusDescription,
+            status: project.status,
+            id: project.id
+        });
     } catch (error) {
         console.error('Error fetching project:', error);
         return NextResponse.json(
@@ -57,9 +66,10 @@ export async function GET(
  */
 export async function PATCH(
     req: NextRequest,
-    { params }: { params: { id: string } }
+    context: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await context.params;
         const { userId: clerkUserId } = await auth();
         if (!clerkUserId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -73,7 +83,7 @@ export async function PATCH(
         // Verify project ownership
         const project = await db.query.projects.findFirst({
             where: and(
-                eq(projects.id, params.id),
+                eq(projects.id, id),
                 eq(projects.userId, user.id)
             ),
         });
@@ -88,11 +98,11 @@ export async function PATCH(
         // Update timestamps
         if (updatedTimestamps && Array.isArray(updatedTimestamps)) {
             // Delete existing timestamps
-            await db.delete(timestamps).where(eq(timestamps.projectId, params.id));
+            await db.delete(timestamps).where(eq(timestamps.projectId, id));
 
             // Insert updated timestamps
             const timestampRecords = updatedTimestamps.map((ts: any, index: number) => ({
-                projectId: params.id,
+                projectId: id,
                 timeSeconds: ts.timeSeconds,
                 timeFormatted: ts.timeFormatted,
                 title: ts.title,
@@ -118,9 +128,10 @@ export async function PATCH(
  */
 export async function DELETE(
     req: NextRequest,
-    { params }: { params: { id: string } }
+    context: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await context.params;
         const { userId: clerkUserId } = await auth();
         if (!clerkUserId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -135,7 +146,7 @@ export async function DELETE(
         const result = await db
             .delete(projects)
             .where(and(
-                eq(projects.id, params.id),
+                eq(projects.id, id),
                 eq(projects.userId, user.id)
             ))
             .returning();

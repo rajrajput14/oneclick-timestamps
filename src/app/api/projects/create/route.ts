@@ -3,19 +3,23 @@ import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 import { projects, timestamps } from '@/lib/db/schema';
 import { getCurrentUser } from '@/lib/auth/user';
-import { checkUsageLimit, incrementUsage } from '@/lib/payments/usage';
-import { extractVideoId } from '@/lib/youtube/utils';
-import { fetchYouTubeTranscript } from '@/lib/youtube/transcript';
+import { getUserUsage, canProcessVideo, deductMinutes } from '@/lib/payments/usage';
+import { getYouTubeVideoId } from '@/lib/youtube/utils';
+import { runSTTPipeline } from '@/lib/youtube/stt-pipeline';
 import { parseTranscriptFile, segmentsToText } from '@/lib/transcript/parser';
 import { detectLanguage } from '@/lib/transcript/language';
-import { generateTimestamps, timestampToSeconds } from '@/lib/ai/timestamp';
+import { generateTimestampsFromText } from '@/lib/ai/gemini-ai';
+import { timestampToSeconds } from '@/lib/utils/timestamps';
 import { eq } from 'drizzle-orm';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Create new project and process timestamp generation
  * POST /api/projects/create
  */
 export async function POST(req: NextRequest) {
+    console.log('[API/Create] Request started');
     try {
         // Check authentication
         const { userId: clerkUserId } = await auth();
@@ -29,19 +33,8 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
-        // Check usage limit
-        const usageCheck = await checkUsageLimit(user.id);
-        if (!usageCheck.allowed) {
-            return NextResponse.json(
-                {
-                    error: 'Usage limit reached',
-                    message: `You've reached your monthly limit of ${usageCheck.limit} generations. Upgrade to Pro for unlimited access.`,
-                    limit: usageCheck.limit,
-                    remaining: usageCheck.remaining,
-                },
-                { status: 429 }
-            );
-        }
+        // Get user usage from database
+        const usage = await getUserUsage(user.id);
 
         const formData = await req.formData();
         const youtubeUrl = formData.get('youtubeUrl') as string | null;
@@ -50,114 +43,275 @@ export async function POST(req: NextRequest) {
         let transcript = '';
         let videoId: string | null = null;
         let title = 'Untitled Project';
+        let durationSeconds = 0;
 
         // Process YouTube URL
         if (youtubeUrl) {
-            videoId = extractVideoId(youtubeUrl);
+            videoId = getYouTubeVideoId(youtubeUrl);
             if (!videoId) {
-                return NextResponse.json(
-                    { error: 'Invalid YouTube URL' },
-                    { status: 400 }
-                );
+                return NextResponse.json({ error: 'Invalid YouTube URL' }, { status: 400 });
             }
 
-            // Fetch transcript
-            const result = await fetchYouTubeTranscript(videoId);
-            if (!result) {
+            // 1. Get Video Duration first for usage check
+            try {
+                const { getVideoDuration } = await import('@/lib/youtube/audio-extractor');
+                durationSeconds = await getVideoDuration(videoId);
+            } catch (err) {
+                return NextResponse.json({ error: 'Failed to fetch video details' }, { status: 400 });
+            }
+
+            // 2. Check usage limit based on minutes
+            const usageCheck = await canProcessVideo(user.id, durationSeconds);
+            if (!usageCheck.allowed) {
                 return NextResponse.json(
                     {
-                        error: 'No captions available',
-                        message: 'This video does not have captions. Please upload a transcript manually.',
+                        error: 'INSUFFICIENT_MINUTES',
+                        message: `You've used all your minutes. Buy more minutes to continue.`,
+                        required: usageCheck.requiredMinutes,
+                        remaining: usageCheck.remainingMinutes,
                     },
-                    { status: 400 }
+                    { status: 429 }
                 );
             }
 
-            transcript = result.transcript;
-            title = `YouTube Video ${videoId}`;
+            // 3. Create project record immediately with 'processing' status
+            const [project] = await db
+                .insert(projects)
+                .values({
+                    userId: user.id,
+                    title: `YouTube Video ${videoId}`,
+                    youtubeUrl,
+                    youtubeVideoId: videoId,
+                    transcript: 'Processing...',
+                    language: 'Detecting...',
+                    status: 'processing',
+                    progress: 0,
+                    statusDescription: 'Queued'
+                })
+                .returning();
+
+            // 3. Launch processing in background safely
+            setTimeout(async () => {
+                console.log(`[Background] Starting pipeline for project ${project.id}`);
+                try {
+                    const updateProgress = async (progress: number, description: string) => {
+                        try {
+                            await db.update(projects)
+                                .set({ progress, statusDescription: description, updatedAt: new Date() })
+                                .where(eq(projects.id, project.id));
+                        } catch (e) {
+                            console.error(`[Background] Progress update error for ${project.id}:`, e);
+                        }
+                    };
+
+                    const PHASE1_DURATION = 1200; // 20 minutes
+                    const isLongVideo = durationSeconds > PHASE1_DURATION;
+
+                    // PHASE 1: Fast Results
+                    const phase1Result = await runSTTPipeline(videoId!, updateProgress, {
+                        durationSeconds: isLongVideo ? PHASE1_DURATION : undefined,
+                        descriptionPrefix: isLongVideo ? '[Phase 1] ' : ''
+                    });
+
+                    // Save Phase 1 timestamps
+                    if (phase1Result.timestamps && phase1Result.timestamps.length > 0) {
+                        const timestampRecords = phase1Result.timestamps.map((ts: { time: string; title: string }, index: number) => ({
+                            projectId: project.id,
+                            timeSeconds: timestampToSeconds(ts.time),
+                            timeFormatted: ts.time,
+                            title: ts.title,
+                            position: index,
+                        }));
+                        await db.insert(timestamps).values(timestampRecords);
+                    }
+
+                    // If short video, we are done
+                    if (!isLongVideo) {
+                        await db.update(projects)
+                            .set({
+                                status: 'completed',
+                                progress: 100,
+                                statusDescription: 'Completed',
+                                language: phase1Result.language,
+                                transcript: 'Transcript generated via STT.',
+                                updatedAt: new Date()
+                            })
+                            .where(eq(projects.id, project.id));
+
+                        await deductMinutes(user.id, phase1Result.processedSeconds);
+                        return;
+                    }
+
+                    // PHASE 2: Background Refinement
+                    // Intermediate update to show Phase 1 is ready
+                    await db.update(projects)
+                        .set({
+                            status: 'completed', // "Completed" so user can see and copy results
+                            progress: 50,
+                            statusDescription: 'Initial results ready. Refining in background...',
+                            language: phase1Result.language,
+                            transcript: 'Phase 1 transcript generated.',
+                            updatedAt: new Date()
+                        })
+                        .where(eq(projects.id, project.id));
+
+                    console.log(`[Background] Phase 1 for ${project.id} complete. Starting Phase 2.`);
+
+                    const phase2Result = await runSTTPipeline(videoId!, updateProgress, {
+                        seekSeconds: PHASE1_DURATION,
+                        descriptionPrefix: '[Phase 2] '
+                    });
+
+                    // Save Phase 2 timestamps
+                    if (phase2Result.timestamps && phase2Result.timestamps.length > 0) {
+                        // Get current max position to append correctly
+                        const timestampRecords = phase2Result.timestamps.map((ts: { time: string; title: string }, index: number) => ({
+                            projectId: project.id,
+                            timeSeconds: timestampToSeconds(ts.time),
+                            timeFormatted: ts.time,
+                            title: ts.title,
+                            position: phase1Result.timestamps.length + index,
+                        }));
+                        await db.insert(timestamps).values(timestampRecords);
+                    }
+
+                    // Final completion update
+                    await db.update(projects)
+                        .set({
+                            progress: 100,
+                            statusDescription: 'Refinement complete.',
+                            updatedAt: new Date()
+                        })
+                        .where(eq(projects.id, project.id));
+
+                    await deductMinutes(user.id, phase2Result.processedSeconds);
+                    console.log(`[Background] Project ${project.id} refinement completed successfully`);
+
+                } catch (error: any) {
+                    console.error(`[Background] Pipeline failed for ${project.id}:`, error);
+                    try {
+                        await db.update(projects)
+                            .set({
+                                status: 'failed',
+                                errorMessage: error.message || 'The STT pipeline encountered an error.',
+                                statusDescription: 'Failed',
+                                updatedAt: new Date()
+                            })
+                            .where(eq(projects.id, project.id));
+                    } catch (e) {
+                        console.error(`[Background] Error-status update failed for ${project.id}:`, e);
+                    }
+                }
+            }, 0);
+
+            console.log(`[API/Create] Returning success: ${project.id}`);
+            return NextResponse.json({
+                success: true,
+                projectId: project.id,
+                status: 'processing'
+            });
         }
         // Process uploaded transcript
         else if (transcriptFile) {
             const content = await transcriptFile.text();
-            const segments = parseTranscriptFile(content, transcriptFile.name);
-            transcript = segmentsToText(segments);
-            title = transcriptFile.name.replace(/\.(txt|srt|vtt)$/i, '');
-        } else {
-            return NextResponse.json(
-                { error: 'Please provide a YouTube URL or upload a transcript' },
-                { status: 400 }
-            );
-        }
+            const filename = transcriptFile.name;
+            title = filename.replace(/\.(txt|srt|vtt)$/i, '');
 
-        // Validate transcript
-        if (!transcript || transcript.length < 100) {
-            return NextResponse.json(
-                { error: 'Transcript is too short. Minimum 100 characters required.' },
-                { status: 400 }
-            );
-        }
+            // 1. Create project record immediately
+            const [project] = await db
+                .insert(projects)
+                .values({
+                    userId: user.id,
+                    title,
+                    transcript: 'Extracting content...',
+                    language: 'Detecting...',
+                    status: 'processing',
+                    progress: 10,
+                    statusDescription: 'Reading file...'
+                })
+                .returning();
 
-        // Detect language
-        const languageInfo = await detectLanguage(transcript);
+            // 3. Launch processing in background
+            setTimeout(async () => {
+                console.log(`[Background] Starting file synthesis for project ${project.id}`);
+                try {
+                    const updateProgress = async (progress: number, description: string) => {
+                        try {
+                            await db.update(projects)
+                                .set({ progress, statusDescription: description, updatedAt: new Date() })
+                                .where(eq(projects.id, project.id));
+                        } catch (e) {
+                            console.error(`[Background] File progress update error for ${project.id}:`, e);
+                        }
+                    };
 
-        // Create project record
-        const [project] = await db
-            .insert(projects)
-            .values({
-                userId: user.id,
-                title,
-                youtubeUrl: youtubeUrl || null,
-                youtubeVideoId: videoId,
-                transcript,
-                language: languageInfo.language,
-                status: 'processing',
-            })
-            .returning();
+                    await updateProgress(20, 'Analyzing structure...');
+                    const segments = parseTranscriptFile(content, filename);
+                    const fullTranscript = segmentsToText(segments);
 
-        // Generate timestamps using AI
-        try {
-            const generatedTimestamps = await generateTimestamps(
-                transcript,
-                languageInfo.language
-            );
+                    await updateProgress(30, 'Detecting intelligence...');
+                    const languageInfo = await detectLanguage(fullTranscript);
 
-            // Save timestamps to database
-            const timestampRecords = generatedTimestamps.map((ts, index) => ({
-                projectId: project.id,
-                timeSeconds: timestampToSeconds(ts.time),
-                timeFormatted: ts.time,
-                title: ts.title,
-                position: index,
-            }));
+                    await updateProgress(50, 'AI Synthesis in progress...');
+                    const generatedTimestamps = await generateTimestampsFromText(fullTranscript, languageInfo.language);
 
-            await db.insert(timestamps).values(timestampRecords);
+                    // Save timestamps
+                    if (generatedTimestamps && generatedTimestamps.length > 0) {
+                        const timestampRecords = generatedTimestamps.map((ts: { time: string; title: string }, index: number) => ({
+                            projectId: project.id,
+                            timeSeconds: timestampToSeconds(ts.time),
+                            timeFormatted: ts.time,
+                            title: ts.title,
+                            position: index,
+                        }));
+                        await db.insert(timestamps).values(timestampRecords);
+                    }
 
-            // Update project status
-            await db
-                .update(projects)
-                .set({ status: 'completed' })
-                .where(eq(projects.id, project.id));
+                    // Final update
+                    await db.update(projects)
+                        .set({
+                            status: 'completed',
+                            progress: 100,
+                            statusDescription: 'Completed',
+                            language: languageInfo.language,
+                            transcript: fullTranscript,
+                            updatedAt: new Date()
+                        })
+                        .where(eq(projects.id, project.id));
 
-            // Increment usage count
-            await incrementUsage(user.id);
+                    // For manual transcript files, we treat it as 1 credit or minimum fee if needed.
+                    // But usually these are small. Let's assume 1 minute if duration is unknown.
+                    await deductMinutes(user.id, 60);
+                    console.log(`[Background] File project ${project.id} completed`);
+
+                } catch (error: any) {
+                    console.error(`[Background] File synthesis failed for ${project.id}:`, error);
+                    try {
+                        await db.update(projects)
+                            .set({
+                                status: 'failed',
+                                errorMessage: error.message || 'AI synthesis roadblock.',
+                                statusDescription: 'Failed',
+                                updatedAt: new Date()
+                            })
+                            .where(eq(projects.id, project.id));
+                    } catch (e) {
+                        console.error(`[Background] Error update failed for ${project.id}:`, e);
+                    }
+                }
+            }, 0);
 
             return NextResponse.json({
                 success: true,
                 projectId: project.id,
-                timestamps: generatedTimestamps,
-                language: languageInfo.language,
+                status: 'processing'
             });
-        } catch (error) {
-            // Update project with error
-            await db
-                .update(projects)
-                .set({
-                    status: 'failed',
-                    errorMessage: error instanceof Error ? error.message : 'Unknown error',
-                })
-                .where(eq(projects.id, project.id));
-
-            throw error;
+        }
+        else {
+            return NextResponse.json(
+                { error: 'Please provide a YouTube URL or upload a transcript' },
+                { status: 400 }
+            );
         }
     } catch (error) {
         console.error('Project creation error:', error);

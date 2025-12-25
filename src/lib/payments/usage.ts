@@ -3,14 +3,9 @@ import { users } from '@/lib/db/schema';
 import { eq, sql } from 'drizzle-orm';
 
 /**
- * Check if user has reached usage limit
+ * Get user usage data
  */
-export async function checkUsageLimit(userId: string): Promise<{
-    allowed: boolean;
-    remaining: number;
-    limit: number;
-    resetDate: Date | null;
-}> {
+export async function getUserUsage(userId: string) {
     const user = await db.query.users.findFirst({
         where: eq(users.id, userId),
     });
@@ -19,83 +14,73 @@ export async function checkUsageLimit(userId: string): Promise<{
         throw new Error('User not found');
     }
 
-    // Default values if null
-    const usageLimit = user.usageLimit ?? 3;
-    const usageCount = user.usageCount ?? 0;
-    const usageResetDate = user.usageResetDate;
-
-    // Check if usage should be reset (monthly)
-    const now = new Date();
-    if (usageResetDate && now >= usageResetDate) {
-        // Calculate new reset date (1 month from today)
-        const nextResetDate = new Date();
-        nextResetDate.setMonth(nextResetDate.getMonth() + 1);
-
-        // Reset usage count
-        await db
-            .update(users)
-            .set({
-                usageCount: 0,
-                usageResetDate: nextResetDate,
-                updatedAt: new Date(),
-            })
-            .where(eq(users.id, userId));
-
-        return {
-            allowed: true,
-            remaining: usageLimit === -1 ? -1 : usageLimit,
-            limit: usageLimit,
-            resetDate: nextResetDate,
-        };
-    }
-
-    // Unlimited for paid users
-    if (usageLimit === -1) {
-        return {
-            allowed: true,
-            remaining: -1,
-            limit: -1,
-            resetDate: usageResetDate,
-        };
-    }
-
-    // Check if under limit
-    const allowed = usageCount < usageLimit;
-    const remaining = Math.max(0, usageLimit - usageCount);
-
     return {
-        allowed,
-        remaining,
-        limit: usageLimit,
-        resetDate: usageResetDate,
+        plan: user.subscriptionPlan || 'Free',
+        status: user.subscriptionStatus || 'active',
+        minutesUsed: user.minutesUsed || 0,
+        minutesLimit: user.minutesLimit || 60,
+        addonMinutes: user.addonMinutes || 0,
+        billingCycleEnd: user.billingCycleEnd,
+        totalAvailable: (user.minutesLimit || 0) + (user.addonMinutes || 0) - (user.minutesUsed || 0)
     };
 }
 
 /**
- * Increment usage count
+ * Check if user has enough minutes for a video duration (in seconds)
  */
-export async function incrementUsage(userId: string): Promise<void> {
+export async function canProcessVideo(userId: string, durationInSeconds: number): Promise<{
+    allowed: boolean;
+    requiredMinutes: number;
+    remainingMinutes: number;
+}> {
+    const usage = await getUserUsage(userId);
+    const requiredMinutes = Math.ceil(durationInSeconds / 60);
+    const remainingMinutes = usage.totalAvailable;
+
+    return {
+        allowed: remainingMinutes >= requiredMinutes,
+        requiredMinutes,
+        remainingMinutes
+    };
+}
+
+/**
+ * Deduct minutes from user balance
+ * Logic: Use subscription minutes (minutesUsed) first, then addonMinutes.
+ */
+export async function deductMinutes(userId: string, durationInSeconds: number): Promise<void> {
+    const user = await db.query.users.findFirst({
+        where: eq(users.id, userId),
+    });
+
+    if (!user) throw new Error('User not found');
+
+    const minutesToDeduct = Math.ceil(durationInSeconds / 60);
+    const subLimit = user.minutesLimit || 0;
+    const subUsed = user.minutesUsed || 0;
+    const subRemaining = Math.max(0, subLimit - subUsed);
+
+    let fromSub = Math.min(minutesToDeduct, subRemaining);
+    let fromAddon = minutesToDeduct - fromSub;
+
     await db
         .update(users)
         .set({
-            usageCount: sql`${users.usageCount} + 1`,
+            minutesUsed: sql`${users.minutesUsed} + ${fromSub}`,
+            addonMinutes: sql`${users.addonMinutes} - ${fromAddon}`,
             updatedAt: new Date(),
         })
         .where(eq(users.id, userId));
 }
 
 /**
- * Reset usage count (called monthly or on subscription change)
+ * Reset minutes_used on billing cycle renewal
  */
-export async function resetUsageCount(userId: string): Promise<void> {
-    const nextResetDate = new Date();
-    nextResetDate.setMonth(nextResetDate.getMonth() + 1);
-
+export async function resetUsageOnRenewal(userId: string): Promise<void> {
     await db
         .update(users)
         .set({
-            usageCount: 0,
-            usageResetDate: nextResetDate,
+            minutesUsed: 0,
             updatedAt: new Date(),
         })
         .where(eq(users.id, userId));

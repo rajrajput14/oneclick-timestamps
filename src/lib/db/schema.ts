@@ -1,5 +1,6 @@
 import { pgTable, text, integer, timestamp, index } from 'drizzle-orm/pg-core';
 import { createId } from '@paralleldrive/cuid2';
+import { relations } from 'drizzle-orm';
 
 // Users table (synced with Clerk)
 export const users = pgTable('users', {
@@ -8,15 +9,23 @@ export const users = pgTable('users', {
     email: text('email').notNull().unique(),
     name: text('name'),
     imageUrl: text('image_url'),
-    subscriptionStatus: text('subscription_status').default('free'), // 'free', 'active', 'cancelled'
+    subscriptionPlan: text('subscription_plan').default('Free'), // 'Free', 'Creator', 'Pro Creator'
+    subscriptionStatus: text('subscription_status').default('active'), // 'active', 'inactive', 'past_due'
     subscriptionId: text('subscription_id'),
-    usageCount: integer('usage_count').default(0),
-    usageLimit: integer('usage_limit').default(3), // Free: 3, Paid: -1 (unlimited)
-    usageResetDate: timestamp('usage_reset_date'),
+    minutesUsed: integer('minutes_used').default(0),
+    minutesLimit: integer('minutes_limit').default(60), // Free: 60, Creator: 500, Pro: 1500
+    addonMinutes: integer('addon_minutes').default(0),
+    billingCycleStart: timestamp('billing_cycle_start').defaultNow(),
+    billingCycleEnd: timestamp('billing_cycle_end'),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({
     clerkIdIdx: index('clerk_id_idx').on(table.clerkId),
+    subscriptionPlanIdx: index('subscription_plan_idx').on(table.subscriptionPlan),
+}));
+
+export const usersRelations = relations(users, ({ many }) => ({
+    projects: many(projects),
 }));
 
 // Projects table
@@ -29,11 +38,21 @@ export const projects = pgTable('projects', {
     transcript: text('transcript'),
     language: text('language'),
     status: text('status').default('processing'), // 'processing', 'completed', 'failed'
+    progress: integer('progress').default(0), // 0 to 100
+    statusDescription: text('status_description').default('Queued'),
     errorMessage: text('error_message'),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({
     userIdIdx: index('user_id_idx').on(table.userId),
+}));
+
+export const projectsRelations = relations(projects, ({ one, many }) => ({
+    user: one(users, {
+        fields: [projects.userId],
+        references: [users.id],
+    }),
+    timestamps: many(timestamps),
 }));
 
 // Timestamps table
@@ -47,6 +66,13 @@ export const timestamps = pgTable('timestamps', {
     createdAt: timestamp('created_at').defaultNow(),
 }, (table) => ({
     projectIdIdx: index('project_id_idx').on(table.projectId),
+}));
+
+export const timestampsRelations = relations(timestamps, ({ one }) => ({
+    project: one(projects, {
+        fields: [timestamps.projectId],
+        references: [projects.id],
+    }),
 }));
 
 // Subscriptions table (LemonSqueezy webhook data)

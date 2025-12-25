@@ -18,7 +18,15 @@ export default function ActivateProButton() {
                 method: 'POST',
             });
 
-            const data = await response.json();
+            let data;
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.indexOf("application/json") !== -1) {
+                data = await response.json();
+            } else {
+                // If not JSON, it's likely an HTML error page or redirect
+                console.error("Non-JSON response received:", await response.text());
+                throw new Error("Server returned an invalid response. You may need to sign in again.");
+            }
 
             if (response.ok) {
                 setStatus('success');
@@ -28,7 +36,7 @@ export default function ActivateProButton() {
                 }, 2000);
             } else {
                 setStatus('error');
-                setMessage(`Error: ${data.error}`);
+                setMessage(`Error: ${data.error || 'Unknown error'}`);
             }
         } catch (error) {
             setStatus('error');

@@ -16,15 +16,26 @@ export async function activateSubscription(
 
     try {
         // Update user to active subscription
+        const user = await db.query.users.findFirst({
+            where: eq(users.id, userId),
+        });
+
+        const updateData: any = {
+            subscriptionStatus: 'active',
+            subscriptionId: lemonSqueezyId,
+            updatedAt: new Date(),
+        };
+
+        // Only reset minutes if they weren't already a Pro user
+        // This prevents resets during background sync
+        if (!user || user.subscriptionStatus !== 'active') {
+            updateData.minutesUsed = 0;
+            updateData.minutesLimit = 500; // Default, will be refined by sync caller
+        }
+
         await db
             .update(users)
-            .set({
-                subscriptionStatus: 'active',
-                subscriptionId: lemonSqueezyId,
-                usageLimit: -1, // Unlimited
-                usageCount: 0, // Reset count
-                updatedAt: new Date(),
-            })
+            .set(updateData)
             .where(eq(users.id, userId));
 
         console.log('✅ User updated to Pro plan');
@@ -92,9 +103,10 @@ export async function deactivateSubscription(lemonSqueezyId: string): Promise<vo
         await db
             .update(users)
             .set({
-                subscriptionStatus: 'free',
+                subscriptionPlan: 'Free',
+                subscriptionStatus: 'active', // 'active' is the new default state even for free
                 subscriptionId: null,
-                usageLimit: 3, // Free plan limit
+                minutesLimit: 60, // Free plan limit
                 updatedAt: new Date(),
             })
             .where(eq(users.id, subscription.userId));
@@ -175,6 +187,13 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
             console.log('✅ Found active subscription:', activeSub.id);
             const attrs = activeSub.attributes;
 
+            // Simple heuristic mapping if metadata isn't available in standard API list response
+            // We should ideally fetch variant details, but for now we'll map variant/product IDs or defaults
+            let minutesLimit = 500;
+            if (String(attrs.product_id) === '44178d21-2e53-4c00-b898-cb3411433815' || String(attrs.variant_id) === '44178d21-2e53-4c00-b898-cb3411433815') {
+                minutesLimit = 1500;
+            }
+
             await activateSubscription(
                 userId,
                 activeSub.id,
@@ -182,6 +201,15 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
                 String(attrs.variant_id),
                 new Date(attrs.renews_at || attrs.ends_at)
             );
+
+            // Explicitly set the plan name and limit after activation to be safe
+            const planName = minutesLimit > 500 ? 'Pro Creator' : 'Creator';
+            await db.update(users)
+                .set({
+                    subscriptionPlan: planName,
+                    minutesLimit: minutesLimit
+                })
+                .where(eq(users.id, userId));
 
             return true;
         }

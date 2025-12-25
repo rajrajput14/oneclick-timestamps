@@ -1,157 +1,110 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { activateSubscription, deactivateSubscription } from '@/lib/payments/subscription';
 import { db } from '@/lib/db';
-import { users } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { users, subscriptions } from '@/lib/db/schema';
+import { eq, sql } from 'drizzle-orm';
 
-/**
- * Verify LemonSqueezy webhook signature
- */
-function verifySignature(payload: string, signature: string, secret: string): boolean {
+export async function POST(req: NextRequest) {
     try {
+        const payload = await req.text();
+        const signature = req.headers.get('x-signature') || '';
+        const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET || '';
+
+        // Verify signature
         const hmac = crypto.createHmac('sha256', secret);
         const digest = hmac.update(payload).digest('hex');
 
-        const signatureBuffer = Buffer.from(signature, 'utf8');
-        const digestBuffer = Buffer.from(digest, 'utf8');
+        if (signature !== digest) {
+            return new Response('Invalid signature', { status: 401 });
+        }
 
-        if (signatureBuffer.length !== digestBuffer.length) {
-            console.error('❌ Signature length mismatch:', {
-                received: signatureBuffer.length,
-                expected: digestBuffer.length
+        const data = JSON.parse(payload);
+        const eventName = data.meta.event_name;
+        const body = data.data;
+
+        // Robust userId detection across custom_data and metadata
+        const customData = data.meta.custom_data;
+        const metadata = data.meta.metadata;
+        const providedUserId = customData?.user_id || customData?.userId || metadata?.user_id || metadata?.userId || body.attributes?.custom_data?.user_id;
+        const customerEmail = body.attributes?.user_email || body.attributes?.customer_email || body.attributes?.email;
+
+        console.log(`[Webhook] Event: ${eventName}, Provided ID: ${providedUserId}, Email: ${customerEmail}`);
+
+        // Resolve internal user from any available ID or email
+        let internalUser = null;
+        if (providedUserId) {
+            internalUser = await db.query.users.findFirst({
+                where: (u, { or, eq }) => or(eq(u.id, providedUserId), eq(u.clerkId, providedUserId))
             });
-            return false;
         }
 
-        return crypto.timingSafeEqual(signatureBuffer, digestBuffer);
+        if (!internalUser && customerEmail) {
+            internalUser = await db.query.users.findFirst({
+                where: eq(users.email, customerEmail)
+            });
+        }
+
+        if (!internalUser) {
+            console.error('[Webhook] Failed to identify user in database.');
+            return NextResponse.json({ message: 'User not found' }, { status: 404 });
+        }
+
+        const userId = internalUser.id;
+        console.log(`[Webhook] Successfully resolved to internal user: ${userId}`);
+
+        if (eventName === 'subscription_created' || eventName === 'subscription_updated') {
+            const attributes = body.attributes;
+            const status = attributes.status;
+
+            // Read minutes_limit from product metadata as requested
+            const minutesLimit = metadata?.minutes_limit ? parseInt(metadata.minutes_limit) : 60;
+            const planName = metadata?.plan_name || (minutesLimit > 500 ? 'Pro Creator' : 'Creator');
+            const billingCycleEnd = attributes.renews_at ? new Date(attributes.renews_at) : null;
+
+            await db.update(users)
+                .set({
+                    subscriptionPlan: planName,
+                    subscriptionStatus: (status === 'active' || status === 'on_trial' || status === 'trialing') ? 'active' : 'inactive',
+                    subscriptionId: String(body.id),
+                    minutesLimit: minutesLimit,
+                    minutesUsed: 0,
+                    billingCycleEnd: billingCycleEnd,
+                    updatedAt: new Date(),
+                })
+                .where(eq(users.id, userId));
+
+            console.log(`[Webhook] Success: User ${userId} updated to plan ${planName}`);
+        }
+
+        if (eventName === 'subscription_cancelled' || eventName === 'subscription_expired') {
+            await db.update(users)
+                .set({
+                    subscriptionStatus: 'inactive',
+                    updatedAt: new Date(),
+                })
+                .where(eq(users.id, userId));
+        }
+
+        if (eventName === 'order_created') {
+            // Robust metadata detection for add-ons
+            const typeValue = customData?.type || metadata?.type;
+            const minutesValue = customData?.minutes || metadata?.minutes;
+
+            if (typeValue === 'addon' && minutesValue) {
+                const addMinutes = parseInt(String(minutesValue));
+                await db.update(users)
+                    .set({
+                        addonMinutes: sql`${users.addonMinutes} + ${addMinutes}`,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(users.id, userId));
+                console.log(`[Webhook] Added ${addMinutes} add-on minutes to user ${userId}`);
+            }
+        }
+
+        return NextResponse.json({ success: true });
     } catch (error) {
-        console.error('❌ Signature verification error:', error);
-        return false;
-    }
-}
-
-/**
- * Find user by ID or email
- */
-async function findUser(userId?: string, email?: string) {
-    if (userId) {
-        // Try database ID first (passed from pricing page)
-        const userById = await db.query.users.findFirst({
-            where: eq(users.id, userId),
-        });
-        if (userById) return userById;
-
-        // Fallback to Clerk ID
-        const userByClerkId = await db.query.users.findFirst({
-            where: eq(users.clerkId, userId),
-        });
-        if (userByClerkId) return userByClerkId;
-    }
-
-    if (email) {
-        const user = await db.query.users.findFirst({
-            where: eq(users.email, email),
-        });
-        if (user) return user;
-    }
-
-    return null;
-}
-
-/**
- * LemonSqueezy webhook handler
- * Handles subscription events: created, updated, cancelled, expired
- */
-export async function POST(req: NextRequest) {
-    console.log('🚀 WEBHOOK ENDPOINT TRIGGERED');
-    console.log('Method:', req.method);
-    console.log('URL:', req.url);
-    try {
-        const payload = await req.text();
-        const signature = req.headers.get('x-signature');
-
-        console.log('📥 LemonSqueezy webhook received');
-        console.log('Signature:', signature);
-
-        if (!signature) {
-            console.error('❌ No signature provided');
-            return NextResponse.json({ error: 'No signature provided' }, { status: 401 });
-        }
-
-        // Verify webhook signature
-        const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
-        if (!secret) {
-            console.error('❌ LEMONSQUEEZY_WEBHOOK_SECRET not configured');
-            return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 });
-        }
-
-        if (!verifySignature(payload, signature, secret)) {
-            console.error('❌ Invalid signature');
-            return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
-        }
-
-        const event = JSON.parse(payload);
-        const eventName = event.meta?.event_name;
-
-        console.log('✅ Webhook verified:', eventName);
-        console.log('📦 Event data:', JSON.stringify(event, null, 2));
-
-        // Extract user identification
-        const customUserId = event.meta?.custom_data?.user_id;
-        const customerEmail = event.data?.attributes?.user_email;
-
-        console.log('🔍 Looking for user:', { customUserId, customerEmail });
-
-        // Find user by ID or email
-        const user = await findUser(customUserId, customerEmail);
-
-        if (!user) {
-            console.error('❌ User not found:', { customUserId, customerEmail });
-            return NextResponse.json({ error: 'User not found' }, { status: 404 });
-        }
-
-        console.log('✅ User found:', user.id, user.email);
-
-        const subscriptionId = event.data?.id;
-        const attributes = event.data?.attributes;
-
-        switch (eventName) {
-            case 'subscription_created':
-            case 'subscription_updated':
-                console.log('📝 Processing subscription:', attributes?.status);
-
-                // Activate subscription if status is active or on_trial
-                if (attributes?.status === 'active' || attributes?.status === 'on_trial') {
-                    await activateSubscription(
-                        user.id,
-                        subscriptionId,
-                        String(attributes.product_id),
-                        String(attributes.variant_id),
-                        new Date(attributes.renews_at || attributes.ends_at)
-                    );
-                    console.log('✅ Subscription activated for user:', user.email);
-                }
-                break;
-
-            case 'subscription_cancelled':
-            case 'subscription_expired':
-            case 'subscription_paused':
-                console.log('📝 Deactivating subscription');
-                await deactivateSubscription(subscriptionId);
-                console.log('✅ Subscription deactivated:', subscriptionId);
-                break;
-
-            default:
-                console.log('ℹ️ Unhandled event:', eventName);
-        }
-
-        return NextResponse.json({ received: true, user: user.email });
-    } catch (error) {
-        console.error('❌ Webhook error:', error);
-        return NextResponse.json(
-            { error: 'Webhook processing failed', details: error instanceof Error ? error.message : 'Unknown error' },
-            { status: 500 }
-        );
+        console.error('[Webhook] Error:', error);
+        return NextResponse.json({ error: 'Webhook handler failed' }, { status: 500 });
     }
 }

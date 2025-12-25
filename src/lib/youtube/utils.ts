@@ -1,31 +1,16 @@
 /**
- * YouTube URL validation and video ID extraction
+ * Validates if a string is a valid YouTube URL.
  */
-export function extractVideoId(url: string): string | null {
-    // Supported formats:
-    // - https://www.youtube.com/watch?v=VIDEO_ID
-    // - https://youtu.be/VIDEO_ID
-    // - https://www.youtube.com/embed/VIDEO_ID
-    // - https://www.youtube.com/v/VIDEO_ID
-
-    const patterns = [
-        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/,
-        /^([a-zA-Z0-9_-]{11})$/, // Direct video ID
-    ];
-
-    for (const pattern of patterns) {
-        const match = url.match(pattern);
-        if (match && match[1]) {
-            return match[1];
-        }
-    }
-
-    return null;
+export function isValidYouTubeUrl(url: string): boolean {
+    if (!url) return false;
+    const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/(watch\?v=|embed\/|v\/|.+\?v=)?([^&=%\?]{11})/;
+    return youtubeRegex.test(url);
 }
 
 /**
- * Validate YouTube URL
+ * Extracts the video ID from a YouTube URL.
  */
-export function isValidYouTubeUrl(url: string): boolean {
-    return extractVideoId(url) !== null;
+export function getYouTubeVideoId(url: string): string | null {
+    const match = url.match(/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/(watch\?v=|embed\/|v\/|.+\?v=)?([^&=%\?]{11})/);
+    return match ? match[5] : null;
 }

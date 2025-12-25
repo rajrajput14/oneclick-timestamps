@@ -72,10 +72,11 @@ export async function syncUser() {
                 email: clerkUser.emailAddresses[0]?.emailAddress || '',
                 name: `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || null,
                 imageUrl: clerkUser.imageUrl || null,
-                subscriptionStatus: 'free',
-                usageCount: 0,
-                usageLimit: 3,
-                usageResetDate: resetDate,
+                subscriptionPlan: 'Free',
+                subscriptionStatus: 'active',
+                minutesUsed: 0,
+                minutesLimit: 60,
+                addonMinutes: 0,
             })
             .returning();
 
@@ -102,6 +103,7 @@ export async function syncUser() {
 
 /**
  * Get current user from database
+ * Automatically syncs if not found but authenticated in Clerk
  */
 export async function getCurrentUser() {
     const clerkUser = await currentUser();
@@ -115,7 +117,11 @@ export async function getCurrentUser() {
             where: eq(users.clerkId, clerkUser.id),
         });
 
-        return user || null;
+        if (user) return user;
+
+        // self-healing sync: user is in Clerk but not in DB
+        console.log(`[Auth] User ${clerkUser.id} missing from DB, triggering sync...`);
+        return await syncUser();
     } catch (error) {
         console.error('Error getting current user:', error);
         return null;
