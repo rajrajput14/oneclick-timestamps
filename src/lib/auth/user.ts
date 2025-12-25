@@ -123,7 +123,8 @@ export async function getCurrentUser() {
         console.log(`[Auth] User ${clerkUser.id} missing from DB, triggering sync...`);
         return await syncUser();
     } catch (error) {
-        console.error('Error getting current user:', error);
-        return null;
+        console.error('CRITICAL: Error getting current user from DB:', error);
+        // Return a special error object to help diagnostics
+        return { error: 'DATABASE_ERROR', details: error instanceof Error ? error.message : 'Unknown error' };
     }
 }
