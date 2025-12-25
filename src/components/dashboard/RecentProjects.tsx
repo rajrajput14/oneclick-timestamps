@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Trash2, CheckCircle2, Square, FolderOpen, AlertCircle, ChevronRight, Activity } from 'lucide-react';
+import { Trash2, CheckCircle2, Square, FolderOpen, AlertCircle, ChevronRight, Clock, Box } from 'lucide-react';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
@@ -14,6 +14,8 @@ interface Project {
     status: string;
     language: string | null;
     createdAt: string;
+    updatedAt: string | null;
+    progress?: number;
 }
 
 export default function RecentProjects({ userId }: { userId: string }) {
@@ -31,10 +33,9 @@ export default function RecentProjects({ userId }: { userId: string }) {
             if (!res.ok) throw new Error('Failed to fetch');
             const data = await res.json();
             setProjects(Array.isArray(data) ? data : []);
-            // Clear selection on refresh
             setSelectedIds(new Set());
         } catch (err) {
-            console.error('Activity Hub Error:', err);
+            console.error('Recent Projects Error:', err);
             setError(true);
         } finally {
             setLoading(false);
@@ -55,7 +56,7 @@ export default function RecentProjects({ userId }: { userId: string }) {
 
     const handleBulkDelete = async () => {
         if (selectedIds.size === 0) return;
-        if (!confirm(`Confirm deletion of ${selectedIds.size} workspace items? This action is permanent.`)) return;
+        if (!confirm(`Confirm deletion of ${selectedIds.size} projects? This action is permanent.`)) return;
 
         setIsDeleting(true);
         try {
@@ -66,11 +67,9 @@ export default function RecentProjects({ userId }: { userId: string }) {
             });
 
             if (!res.ok) throw new Error('Delete failed');
-
-            // Refresh list
             await fetchProjects();
         } catch (err) {
-            alert('Encountered an issue during workspace cleanup. Please try again.');
+            alert('Encountered an issue during project cleanup.');
         } finally {
             setIsDeleting(false);
         }
@@ -82,18 +81,14 @@ export default function RecentProjects({ userId }: { userId: string }) {
 
     if (loading) {
         return (
-            <div className="space-y-8 px-4 py-6">
-                <div className="flex items-center justify-between px-4">
-                    <Skeleton className="h-4 w-48" />
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {[1, 2, 3].map((i) => (
-                    <Card key={i} variant="darker" className="p-10 border-white/5">
-                        <div className="flex items-center justify-between">
-                            <div className="space-y-6 flex-1">
-                                <Skeleton className="h-5 w-3/4" />
-                                <Skeleton className="h-4 w-1/4" />
-                            </div>
-                            <Skeleton className="w-12 h-12 rounded-2xl" />
+                    <Card key={i} variant="darker" className="p-8 border-white/5 space-y-4">
+                        <Skeleton className="h-6 w-3/4" />
+                        <Skeleton className="h-4 w-1/2" />
+                        <div className="flex justify-between items-center pt-4">
+                            <Skeleton className="h-8 w-24 rounded-full" />
+                            <Skeleton className="h-8 w-8 rounded-lg" />
                         </div>
                     </Card>
                 ))}
@@ -103,49 +98,39 @@ export default function RecentProjects({ userId }: { userId: string }) {
 
     if (error) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[500px] p-12 text-center space-y-10 animate-in fade-in zoom-in-95 duration-500">
-                <div className="w-24 h-24 rounded-[2.5rem] bg-red-500/10 flex items-center justify-center text-red-500 border border-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.1)]">
-                    <AlertCircle className="w-12 h-12" />
+            <div className="flex flex-col items-center justify-center py-20 text-center space-y-6 glass rounded-[2rem] border-red-500/10">
+                <AlertCircle className="w-12 h-12 text-red-500" />
+                <div className="space-y-2">
+                    <h3 className="text-xl font-bold uppercase tracking-tight">Failed to load projects</h3>
+                    <p className="text-sm text-muted-foreground">Please check your connection and try again.</p>
                 </div>
-                <div className="space-y-4">
-                    <h3 className="text-2xl font-black uppercase tracking-tighter text-foreground">Registry Signal Interrupted</h3>
-                    <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground opacity-60 leading-relaxed">
-                        Loss of contact with the workspace archives. <br /> Attempt to re-establish secure link.
-                    </p>
-                </div>
-                <Button variant="outline" size="md" className="px-10 font-bold tracking-wide" onClick={fetchProjects}>
-                    RELOAD
-                </Button>
+                <Button variant="outline" size="md" onClick={fetchProjects}>RETRY</Button>
             </div>
         );
     }
 
     if (projects.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[500px] p-12 text-center space-y-12 animate-in fade-in zoom-in-95 duration-700">
-                <div className="relative">
-                    <div className="w-32 h-32 glass-darker rounded-[3rem] flex items-center justify-center text-indigo-500/20 border-border/50 shadow-inner">
-                        <FolderOpen className="w-16 h-16" />
-                    </div>
+            <div className="flex flex-col items-center justify-center py-24 text-center space-y-8 glass rounded-[3rem] border-dashed border-white/10">
+                <div className="w-20 h-20 bg-white/5 rounded-[2rem] flex items-center justify-center text-muted-foreground/30">
+                    <FolderOpen size={40} />
                 </div>
-                <div className="space-y-4">
-                    <h3 className="text-2xl font-black uppercase tracking-tighter text-foreground">No projects yet</h3>
-                    <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground opacity-50 leading-relaxed">
-                        Paste a link to get started.
-                    </p>
+                <div className="space-y-2">
+                    <h3 className="text-xl font-black uppercase tracking-widest">No Projects Found</h3>
+                    <p className="text-sm text-muted-foreground max-w-[200px]">Create your first project to see it here.</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="space-y-8 px-2 pb-12 animate-in fade-in duration-500">
-            {/* Header / Bulk Actions */}
-            <div className="flex items-center justify-between px-8 py-4">
-                <div className="flex items-center gap-4">
+        <div className="space-y-10">
+            {/* Header & Bulk Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                <div className="flex items-center gap-3">
                     <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground opacity-80">
-                        RECENT PROJECTS // {projects.length} VIDEOS
+                    <h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">
+                        Project Archives // {projects.length} Items
                     </h2>
                 </div>
 
@@ -153,63 +138,92 @@ export default function RecentProjects({ userId }: { userId: string }) {
                     <Button
                         variant="danger"
                         size="sm"
-                        className="px-6 text-[10px] font-black tracking-wide"
+                        className="w-full sm:w-auto px-6 text-[10px] font-black tracking-widest"
                         onClick={handleBulkDelete}
                         loading={isDeleting}
                     >
-                        <Trash2 className="w-4 h-4 mr-3" />
-                        DELETE {selectedIds.size} VIDEOS
+                        <Trash2 className="w-3.5 h-3.5 mr-2" />
+                        PURGE {selectedIds.size} SELECTED
                     </Button>
                 )}
             </div>
 
-            <div className="space-y-6">
+            {/* Responsive Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
                 {projects.map((project) => {
                     const isSelected = selectedIds.has(project.id);
                     const isCompleted = project.status === 'completed';
 
                     return (
-                        <div key={project.id} className="relative group px-10">
-                            {/* Selection Checkbox - Balanced within the card's left area */}
-                            <button
-                                onClick={(e) => toggleSelect(e, project.id)}
-                                className={`absolute left-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${isSelected
-                                    ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(99,102,241,0.4)] scale-110'
-                                    : 'bg-secondary text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:scale-110 border border-border hover:border-indigo-500/40'
-                                    }`}
-                            >
-                                {isSelected ? (
-                                    <CheckCircle2 className="w-4 h-4 animate-in zoom-in-75 duration-200" />
-                                ) : (
-                                    <Square className="w-4 h-4 opacity-50" />
-                                )}
-                            </button>
-
+                        <div key={project.id} className="relative group flex justify-center">
+                            {/* Card Link */}
                             <Link
                                 href={`/dashboard/project/${project.id}`}
-                                className={`block p-8 rounded-[2rem] bg-card/40 border transition-all duration-300 group/item shadow-xl relative ${isSelected ? 'border-indigo-500/50 bg-indigo-500/[0.05] ring-1 ring-indigo-500/20' : 'border-border/50 hover:border-border hover:bg-card/80'
+                                className={`w-full max-w-[400px] flex flex-col p-8 rounded-[2.5rem] bg-card/40 border transition-all duration-500 group/item shadow-2xl relative overflow-hidden backdrop-blur-sm ${isSelected
+                                        ? 'border-indigo-500/50 bg-indigo-500/[0.08] ring-1 ring-indigo-500/20 scale-[0.98]'
+                                        : 'border-white/5 hover:border-indigo-500/30 hover:bg-card/60 hover:translate-y-[-4px]'
                                     }`}
                             >
-                                <div className="flex items-center justify-between gap-8 pl-6 relative z-10">
-                                    <div className="min-w-0 flex-1 space-y-3">
-                                        <h3 className={`font-bold text-base uppercase tracking-tight truncate transition-colors ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-foreground group-hover/item:text-indigo-600 dark:group-hover/item:text-indigo-400'}`}>
+                                {/* Selection Overlay */}
+                                <button
+                                    onClick={(e) => toggleSelect(e, project.id)}
+                                    className={`absolute right-6 top-6 z-20 w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${isSelected
+                                            ? 'bg-indigo-600 text-white shadow-lg'
+                                            : 'bg-white/5 text-transparent group-hover:text-muted-foreground/40 border border-white/5 hover:bg-white/10'
+                                        }`}
+                                >
+                                    {isSelected ? <CheckCircle2 size={18} /> : <Square size={18} />}
+                                </button>
+
+                                {/* Card Content */}
+                                <div className="space-y-6 flex-1">
+                                    <div className="space-y-2">
+                                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-400/80">
+                                            <Box size={12} />
+                                            <span>Project ID: {project.id.slice(0, 8)}</span>
+                                        </div>
+                                        <h3 className="text-xl font-black uppercase tracking-tight text-foreground line-clamp-2 leading-tight min-h-[3rem]">
                                             {project.title}
                                         </h3>
+                                    </div>
 
-                                        <div className="flex items-center gap-6">
-                                            <Badge variant={isCompleted ? 'success' : 'warning'} className="px-4 py-1.5 text-[10px] font-bold tracking-widest border-border/50">
-                                                <div className={`w-1.5 h-1.5 rounded-full mr-2.5 ${isCompleted ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-yellow-500 animate-pulse'}`} />
-                                                {project.status.toUpperCase()}
-                                            </Badge>
-                                            <span className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest font-outfit italic">
-                                                {new Date(project.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                                            </span>
+                                    <div className="flex flex-wrap items-center gap-4">
+                                        <Badge
+                                            variant={isCompleted ? 'success' : 'warning'}
+                                            className="px-4 py-1.5 text-[9px] font-black tracking-widest border border-white/5"
+                                        >
+                                            <div className={`w-1.5 h-1.5 rounded-full mr-2 ${isCompleted ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-yellow-500 animate-pulse'}`} />
+                                            {project.status.toUpperCase()}
+                                        </Badge>
+
+                                        <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">
+                                            <Clock size={12} />
+                                            <span>{new Date(project.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
                                         </div>
                                     </div>
+                                </div>
 
-                                    <div className={`w-12 h-12 bg-secondary rounded-2xl flex items-center justify-center transition-all duration-500 group-hover/item:scale-110 group-hover/item:bg-indigo-600 group-hover/item:text-white border border-border flex-shrink-0 ${isCompleted ? 'text-indigo-500' : 'text-muted-foreground/20'}`}>
-                                        <ChevronRight className="w-5 h-5" strokeWidth={3} />
+                                {/* Progress Indicator (if active) */}
+                                {!isCompleted && (
+                                    <div className="mt-8 space-y-2">
+                                        <div className="flex justify-between text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">
+                                            <span>Processing</span>
+                                            <span>{project.progress || 0}%</span>
+                                        </div>
+                                        <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-indigo-500 transition-all duration-1000"
+                                                style={{ width: `${project.progress || 0}%` }}
+                                            />
+                                        </div>
                                     </div>
+                                )}
+
+                                <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40 group-hover/item:text-indigo-500 transition-colors">
+                                        Open Workspace
+                                    </span>
+                                    <ChevronRight className="w-4 h-4 text-muted-foreground/20 group-hover/item:text-indigo-500 group-hover/item:translate-x-1 transition-all" />
                                 </div>
                             </Link>
                         </div>

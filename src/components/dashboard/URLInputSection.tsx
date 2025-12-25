@@ -51,15 +51,15 @@ export function URLInputSection({ onSubmit, loading, disabled }: URLInputSection
                         className={`p-2 border-border/50 focus-within:border-indigo-500/40 transition-all shadow-inner bg-background/50 ${loading ? 'opacity-50 pointer-events-none' : ''
                             } ${showError ? 'border-red-500/40' : ''}`}
                     >
-                        <div className="flex items-center px-8">
-                            <Link2 className={`w-6 h-6 transition-colors ${showError ? 'text-red-500' : 'text-indigo-500'}`} />
+                        <div className="flex items-center px-4 md:px-8">
+                            <Link2 className={`w-5 h-5 md:w-6 md:h-6 transition-colors ${showError ? 'text-red-500' : 'text-indigo-500'}`} />
                             <input
                                 type="text"
                                 value={url}
                                 onChange={(e) => setUrl(e.target.value)}
-                                placeholder="Paste YouTube video link here"
+                                placeholder="Paste YouTube link"
                                 autoFocus
-                                className="w-full bg-transparent px-8 py-10 text-lg font-bold text-foreground outline-none border-none placeholder:text-muted-foreground/20 uppercase tracking-wide"
+                                className="w-full bg-transparent px-4 md:px-8 py-6 md:py-10 text-base md:text-lg font-bold text-foreground outline-none border-none placeholder:text-muted-foreground/20 uppercase tracking-wide"
                                 disabled={loading || disabled}
                             />
                         </div>

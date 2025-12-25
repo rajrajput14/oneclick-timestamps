@@ -41,7 +41,7 @@ export function FileUploadSection({ onSubmit, loading, disabled }: FileUploadSec
                         className={`p-2 border-border/50 focus-within:border-indigo-500/40 transition-all shadow-inner bg-background/50 ${loading ? 'opacity-50 pointer-events-none' : ''
                             }`}
                     >
-                        <div className="relative h-[200px] flex items-center justify-center">
+                        <div className="relative h-[160px] md:h-[200px] flex items-center justify-center">
                             {!file ? (
                                 <>
                                     <input
@@ -61,15 +61,15 @@ export function FileUploadSection({ onSubmit, loading, disabled }: FileUploadSec
                                     </div>
                                 </>
                             ) : (
-                                <div className="flex items-center gap-8 px-12 w-full animate-in zoom-in-95 duration-500">
-                                    <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-500 border border-indigo-500/20 shadow-[0_0_20px_rgba(79,70,229,0.1)]">
-                                        <FileText className="w-8 h-8" />
+                                <div className="flex flex-col sm:flex-row items-center gap-4 md:gap-8 px-6 md:px-12 w-full animate-in zoom-in-95 duration-500 py-4 md:py-0">
+                                    <div className="w-12 h-12 md:w-16 md:h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-500 border border-indigo-500/20 shadow-[0_0_20px_rgba(79,70,229,0.1)]">
+                                        <FileText className="w-6 h-6 md:w-8 md:h-8" />
                                     </div>
-                                    <div className="flex-1 min-w-0 space-y-2">
-                                        <p className="text-lg font-bold text-foreground uppercase tracking-tight truncate leading-none">
+                                    <div className="flex-1 min-w-0 space-y-1 md:space-y-2 text-center sm:text-left">
+                                        <p className="text-base md:text-lg font-bold text-foreground uppercase tracking-tight truncate leading-none">
                                             {file.name}
                                         </p>
-                                        <p className="text-xs font-bold text-muted-foreground/50 uppercase tracking-wide">
+                                        <p className="text-[10px] md:text-xs font-bold text-muted-foreground/50 uppercase tracking-wide">
                                             {(file.size / 1024).toFixed(1)} KB
                                         </p>
                                     </div>
@@ -77,9 +77,9 @@ export function FileUploadSection({ onSubmit, loading, disabled }: FileUploadSec
                                         variant="ghost"
                                         size="icon"
                                         onClick={handleClear}
-                                        className="h-12 w-12 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 border-border/50"
+                                        className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 border-border/50"
                                     >
-                                        <X className="w-5 h-5" />
+                                        <X className="w-4 h-4 md:w-5 md:h-5" />
                                     </Button>
                                 </div>
                             )}

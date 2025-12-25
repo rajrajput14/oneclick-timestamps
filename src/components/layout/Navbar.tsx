@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation';
 import { ThemeToggle } from './ThemeToggle';
 import { Menu, X } from 'lucide-react';
 
-export default function Navbar() {
+export default function Navbar({ onMenuClick, showDefaultMobileMenu = true }: { onMenuClick?: () => void, showDefaultMobileMenu?: boolean }) {
     const { isSignedIn, user, isLoaded } = useUser();
     const [scrolled, setScrolled] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -95,17 +95,17 @@ export default function Navbar() {
 
                     {/* Hamburger Button */}
                     <button
-                        onClick={() => setIsMenuOpen(!isMenuOpen)}
+                        onClick={() => onMenuClick ? onMenuClick() : setIsMenuOpen(!isMenuOpen)}
                         className="md:hidden p-2 rounded-xl glass-darker text-foreground hover:bg-secondary transition-all active:scale-95"
                         aria-label="Toggle menu"
                     >
-                        {isMenuOpen ? <X size={20} /> : <Menu size={20} />}
+                        {(isMenuOpen && !onMenuClick) ? <X size={20} /> : <Menu size={20} />}
                     </button>
                 </div>
             </div>
 
             {/* Mobile Menu Overlay */}
-            {isMenuOpen && (
+            {(isMenuOpen && showDefaultMobileMenu && !onMenuClick) && (
                 <div className="md:hidden fixed inset-x-4 top-24 z-40 animate-in slide-in-from-top duration-300">
                     <div className="glass rounded-[2rem] p-6 shadow-2xl border border-white/10 flex flex-col gap-4">
                         <div className="flex items-center justify-between mb-2">
