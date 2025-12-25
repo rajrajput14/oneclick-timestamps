@@ -15,12 +15,8 @@ import PaymentRefresh from '@/components/dashboard/PaymentRefresh';
 export default async function DashboardPage(props: { searchParams: Promise<any> }) {
     const resolvedSearchParams = await props.searchParams;
     const user = await getCurrentUser();
-
-    const isPaymentSuccess = resolvedSearchParams?.payment === 'success';
-
-    if (!user) {
-        redirect('/sign-in');
-    }
+    // Middleware handles the redirect if not authenticated
+    if (!user) return null;
 
     const isPaidUser = user.subscriptionStatus === 'active' || user.subscriptionStatus === 'trialing' || user.subscriptionStatus === 'on_trial';
     const minutesUsed = user.minutesUsed || 0;

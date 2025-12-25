@@ -9,10 +9,13 @@ const isPublicRoute = createRouteMatcher([
 ])
 
 export default clerkMiddleware(async (auth, request) => {
-    if (!isPublicRoute(request)) {
-        await auth.protect()
+    const { userId } = await auth();
+
+    // If user is on a protected route and not signed in, protect it
+    if (!isPublicRoute(request) && !userId) {
+        await auth.protect();
     }
-})
+});
 
 export const config = {
     matcher: [

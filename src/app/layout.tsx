@@ -20,13 +20,15 @@ export const metadata: Metadata = {
 
 import { ThemeProvider } from "@/components/theme-provider"
 
+const CLERK_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_test_aGVscGZ1bC1kb2ctNzEuY2xlcmsuYWNjb3VudHMuZGV2JA';
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
       <html lang="en" suppressHydrationWarning className={`${outfit.variable} ${inter.variable}`}>
         <body className="antialiased min-h-screen font-inter">
           <ThemeProvider

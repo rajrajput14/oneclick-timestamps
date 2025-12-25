@@ -14,7 +14,8 @@ export default async function BillingPage(props: {
 }) {
     const resolvedSearchParams = await props.searchParams;
     const user = await getCurrentUser();
-    if (!user) redirect('/sign-in');
+    // Middleware handles the redirect if not authenticated
+    if (!user) return null; // Safety check for types
 
     const isPaymentSuccess = resolvedSearchParams?.payment === 'success';
 

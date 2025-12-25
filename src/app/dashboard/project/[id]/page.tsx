@@ -13,10 +13,11 @@ export default async function ProjectPage(props: { params: Promise<{ id: string 
     const { id } = await props.params;
 
     const { userId: clerkUserId } = await auth();
-    if (!clerkUserId) redirect('/sign-in');
+    // Middleware handles the redirect if not authenticated
 
     const user = await getCurrentUser();
-    if (!user) redirect('/sign-in');
+    // Middleware handles the redirect if not authenticated
+    if (!user) return null;
 
     const project = await db.query.projects.findFirst({
         where: and(eq(projects.id, id), eq(projects.userId, user.id)),
