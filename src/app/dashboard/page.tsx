@@ -18,6 +18,8 @@ export default async function DashboardPage(props: { searchParams: Promise<any> 
     // Middleware handles the redirect if not authenticated
     if (!user) return null;
 
+    const isPaymentSuccess = resolvedSearchParams?.payment === 'success';
+
     const isPaidUser = user.subscriptionStatus === 'active' || user.subscriptionStatus === 'trialing' || user.subscriptionStatus === 'on_trial';
     const minutesUsed = user.minutesUsed || 0;
     const totalMinutes = (user.minutesLimit || 0) + (user.addonMinutes || 0);
