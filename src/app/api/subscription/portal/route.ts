@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/user';
 import { getCustomerPortalUrl } from '@/lib/payments/subscription';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * API route to fetch the LemonSqueezy customer portal URL for the current user
  */
