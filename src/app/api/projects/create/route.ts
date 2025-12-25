@@ -57,29 +57,7 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: 'Invalid YouTube URL' }, { status: 400 });
             }
 
-            // 1. Get Video Duration first for usage check
-            try {
-                const { getVideoDuration } = await import('@/lib/youtube/audio-extractor');
-                durationSeconds = await getVideoDuration(videoId);
-            } catch (err) {
-                return NextResponse.json({ error: 'Failed to fetch video details' }, { status: 400 });
-            }
-
-            // 2. Check usage limit based on minutes
-            const usageCheck = await canProcessVideo(user.id, durationSeconds);
-            if (!usageCheck.allowed) {
-                return NextResponse.json(
-                    {
-                        error: 'INSUFFICIENT_MINUTES',
-                        message: `You've used all your minutes. Buy more minutes to continue.`,
-                        required: usageCheck.requiredMinutes,
-                        remaining: usageCheck.remainingMinutes,
-                    },
-                    { status: 429 }
-                );
-            }
-
-            // 3. Create project record immediately with 'processing' status
+            // [INSTANT RESPONSE] Create project record immediately
             const [project] = await db
                 .insert(projects)
                 .values({
@@ -87,49 +65,69 @@ export async function POST(req: NextRequest) {
                     title: `YouTube Video ${videoId}`,
                     youtubeUrl,
                     youtubeVideoId: videoId,
-                    transcript: 'Processing...',
+                    transcript: 'Initialising...',
                     language: 'Detecting...',
                     status: 'processing',
-                    progress: 0,
-                    statusDescription: 'Queued'
+                    progress: 2,
+                    statusDescription: 'Validating Video Signal...'
                 })
                 .returning();
 
-            // 3. Launch processing in background safely
+            // [BACKGROUND PROCESS] Defer heavy lifting to avoid Vercel timeouts
             setTimeout(async () => {
-                console.log(`[Background] Starting pipeline for project ${project.id}`);
-                try {
-                    const updateProgress = async (progress: number, description: string) => {
-                        console.log(`[Background] Project ${project.id} progress: ${progress}% - ${description}`);
-                        try {
-                            await db.update(projects)
-                                .set({ progress, statusDescription: description, updatedAt: new Date() })
-                                .where(eq(projects.id, project.id));
-                        } catch (e) {
-                            console.error(`[Background] Progress update error for ${project.id}:`, e);
-                        }
-                    };
+                console.log(`[Background] Starting sequence for project ${project.id}`);
+                const updateProgress = async (progress: number, description: string, status: string = 'processing') => {
+                    console.log(`[Background] Project ${project.id} progress: ${progress}% - ${description}`);
+                    try {
+                        await db.update(projects)
+                            .set({ progress, statusDescription: description, status, updatedAt: new Date() })
+                            .where(eq(projects.id, project.id));
+                    } catch (e) {
+                        console.error(`[Background] Progress update error for ${project.id}:`, e);
+                    }
+                };
 
+                try {
+                    // 1. Fetch Metadata (Slow)
+                    let durationSeconds = 0;
+                    try {
+                        const { getVideoDuration } = await import('@/lib/youtube/audio-extractor');
+                        durationSeconds = await getVideoDuration(videoId!);
+                    } catch (err) {
+                        console.error(`[Background] Duration fetch failed for ${videoId}:`, err);
+                        await updateProgress(0, 'Failed to retrieve video metadata. Double check the URL.', 'failed');
+                        return;
+                    }
+
+                    // 2. Validate Usage (Slow)
+                    const usageCheck = await canProcessVideo(user.id, durationSeconds);
+                    if (!usageCheck.allowed) {
+                        console.warn(`[Background] Insufficient minutes for user ${user.id} (Project: ${project.id})`);
+                        await db.update(projects)
+                            .set({
+                                status: 'failed',
+                                statusDescription: 'Insufficient credits.',
+                                errorMessage: `This video requires ${Math.round(durationSeconds / 60)} minutes. You have ${usageCheck.remainingMinutes} minutes left.`,
+                                updatedAt: new Date()
+                            })
+                            .where(eq(projects.id, project.id));
+                        return;
+                    }
+
+                    // 3. Start Pipeline
                     const PHASE1_DURATION = 1200; // 20 minutes
                     const isLongVideo = durationSeconds > PHASE1_DURATION;
 
                     await updateProgress(15, 'Validating video signal...');
-
-                    // PHASE 1: Audio Extraction
-                    await updateProgress(25, 'Extracting audio layers...');
-
-                    // PHASE 2: Speech to Text
-                    await updateProgress(45, isLongVideo ? 'Processing initial segment...' : 'Converting speech to text...');
+                    await updateProgress(22, 'Extracting audio layers...');
 
                     const phase1Result = await runSTTPipeline(videoId!, updateProgress, {
                         durationSeconds: isLongVideo ? PHASE1_DURATION : undefined,
                         descriptionPrefix: isLongVideo ? '[Phase 1] ' : ''
                     });
 
-                    // PHASE 3: AI Structuring
                     await updateProgress(75, 'Structuring timestamps with AI...');
 
-                    // Save Phase 1 timestamps
                     if (phase1Result.timestamps && phase1Result.timestamps.length > 0) {
                         const timestampRecords = phase1Result.timestamps.map((ts: { time: string; title: string }, index: number) => ({
                             projectId: project.id,
@@ -141,7 +139,6 @@ export async function POST(req: NextRequest) {
                         await db.insert(timestamps).values(timestampRecords);
                     }
 
-                    // If short video, we are done
                     if (!isLongVideo) {
                         await updateProgress(95, 'Finalizing project...');
                         await db.update(projects)
@@ -156,23 +153,18 @@ export async function POST(req: NextRequest) {
                             .where(eq(projects.id, project.id));
 
                         await deductMinutes(user.id, phase1Result.processedSeconds);
-                        console.log(`[Background] Short project ${project.id} completed successfully`);
+                        console.log(`[Background] Project ${project.id} successful`);
                         return;
                     }
 
-                    // PHASE 4: Background Refinement for long videos
+                    // Phase 2 logic (Long Videos)
                     await updateProgress(85, 'Initial timestamps ready. Refining full video...');
-
-                    console.log(`[Background] Phase 1 for ${project.id} complete. Starting Phase 2.`);
-
                     const phase2Result = await runSTTPipeline(videoId!, updateProgress, {
                         seekSeconds: PHASE1_DURATION,
                         descriptionPrefix: '[Phase 2] '
                     });
 
-                    // Save Phase 2 timestamps
                     if (phase2Result.timestamps && phase2Result.timestamps.length > 0) {
-                        // Get current max position to append correctly
                         const timestampRecords = phase2Result.timestamps.map((ts: { time: string; title: string }, index: number) => ({
                             projectId: project.id,
                             timeSeconds: timestampToSeconds(ts.time),
@@ -183,9 +175,9 @@ export async function POST(req: NextRequest) {
                         await db.insert(timestamps).values(timestampRecords);
                     }
 
-                    // Final completion update
                     await db.update(projects)
                         .set({
+                            status: 'completed',
                             progress: 100,
                             statusDescription: 'Refinement complete.',
                             updatedAt: new Date()
@@ -193,26 +185,20 @@ export async function POST(req: NextRequest) {
                         .where(eq(projects.id, project.id));
 
                     await deductMinutes(user.id, phase2Result.processedSeconds);
-                    console.log(`[Background] Project ${project.id} refinement completed successfully`);
 
                 } catch (error: any) {
-                    console.error(`[Background] Pipeline failed for ${project.id}:`, error);
-                    try {
-                        await db.update(projects)
-                            .set({
-                                status: 'failed',
-                                errorMessage: error.message || 'The STT pipeline encountered an error.',
-                                statusDescription: 'Failed',
-                                updatedAt: new Date()
-                            })
-                            .where(eq(projects.id, project.id));
-                    } catch (e) {
-                        console.error(`[Background] Error-status update failed for ${project.id}:`, e);
-                    }
+                    console.error(`[Background] Critical Failure for ${project.id}:`, error);
+                    await db.update(projects)
+                        .set({
+                            status: 'failed',
+                            errorMessage: error.message || 'Pipeline interruption.',
+                            statusDescription: 'Failed',
+                            updatedAt: new Date()
+                        })
+                        .where(eq(projects.id, project.id));
                 }
             }, 0);
 
-            console.log(`[API/Create] Returning success: ${project.id}`);
             return NextResponse.json({
                 success: true,
                 projectId: project.id,
