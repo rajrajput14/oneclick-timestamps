@@ -11,6 +11,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        if ('error' in user) {
+            return NextResponse.json({ error: 'Database error', details: user.details }, { status: 500 });
+        }
+
         console.log('🚀 Manual sync requested for user:', user.email);
 
         const success = await syncSubscriptionWithLemonSqueezy(user.id, user.email);

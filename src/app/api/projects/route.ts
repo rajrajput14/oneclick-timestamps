@@ -22,6 +22,10 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
+        if ('error' in user) {
+            return NextResponse.json({ error: 'Database error', details: user.details }, { status: 500 });
+        }
+
         // Fetch all projects for user
         const userProjects = await db.query.projects.findMany({
             where: eq(projects.userId, user.id),

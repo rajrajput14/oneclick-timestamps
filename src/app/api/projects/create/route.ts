@@ -34,6 +34,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
+        if ('error' in user) {
+            return NextResponse.json({ error: 'Database error', details: user.details }, { status: 500 });
+        }
+
         // Get user usage from database
         const usage = await getUserUsage(user.id);
 

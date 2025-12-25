@@ -15,6 +15,10 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        if ('error' in user) {
+            return NextResponse.json({ error: 'Database error', details: user.details }, { status: 500 });
+        }
+
         if (!user.subscriptionId) {
             return NextResponse.json({ error: 'No active subscription found' }, { status: 404 });
         }

@@ -26,6 +26,10 @@ export async function GET(
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
+        if (user && 'error' in user) {
+            return NextResponse.json({ error: 'Database error', details: user.details }, { status: 500 });
+        }
+
         // Fetch project with timestamps
         const project = await db.query.projects.findFirst({
             where: and(
@@ -78,6 +82,10 @@ export async function PATCH(
         const user = await getCurrentUser();
         if (!user) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        }
+
+        if (user && 'error' in user) {
+            return NextResponse.json({ error: 'Database error', details: user.details }, { status: 500 });
         }
 
         // Verify project ownership
@@ -140,6 +148,10 @@ export async function DELETE(
         const user = await getCurrentUser();
         if (!user) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        }
+
+        if (user && 'error' in user) {
+            return NextResponse.json({ error: 'Database error', details: user.details }, { status: 500 });
         }
 
         // Verify project ownership and delete

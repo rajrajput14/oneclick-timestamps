@@ -101,11 +101,14 @@ export async function syncUser() {
     }
 }
 
+export type AuthUser = typeof users.$inferSelect;
+export type DatabaseError = { error: 'DATABASE_ERROR'; details: string };
+
 /**
  * Get current user from database
  * Automatically syncs if not found but authenticated in Clerk
  */
-export async function getCurrentUser() {
+export async function getCurrentUser(): Promise<AuthUser | DatabaseError | null> {
     const clerkUser = await currentUser();
 
     if (!clerkUser) {
@@ -125,6 +128,9 @@ export async function getCurrentUser() {
     } catch (error) {
         console.error('CRITICAL: Error getting current user from DB:', error);
         // Return a special error object to help diagnostics
-        return { error: 'DATABASE_ERROR', details: error instanceof Error ? error.message : 'Unknown error' };
+        return {
+            error: 'DATABASE_ERROR',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        };
     }
 }

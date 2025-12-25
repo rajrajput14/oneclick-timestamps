@@ -8,6 +8,7 @@ import TimestampOutput from '@/components/output/TimestampOutput';
 import Link from 'next/link';
 import GenerateTimestampsButton from '@/components/output/GenerateTimestampsButton';
 import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 
 export default async function ProjectPage(props: { params: Promise<{ id: string }> }) {
     const { id } = await props.params;
@@ -18,6 +19,19 @@ export default async function ProjectPage(props: { params: Promise<{ id: string 
     const user = await getCurrentUser();
     // Middleware handles the redirect if not authenticated
     if (!user) return null;
+
+    // Diagnostic UI for database errors
+    if ('error' in user) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[40vh] text-center space-y-6">
+                <div className="text-4xl uppercase font-black text-red-500 underline decoration-red-500/30">DATABASE_ERROR</div>
+                <p className="text-muted-foreground">Unable to fetch project data. Please check your database connection.</p>
+                <Button asChild variant="outline">
+                    <Link href="/dashboard">Return to Dashboard</Link>
+                </Button>
+            </div>
+        );
+    }
 
     const project = await db.query.projects.findFirst({
         where: and(eq(projects.id, id), eq(projects.userId, user.id)),

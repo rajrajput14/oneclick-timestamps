@@ -30,6 +30,10 @@ export async function POST(
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
+        if ('error' in user) {
+            return NextResponse.json({ error: 'Database error', details: user.details }, { status: 500 });
+        }
+
         // Fetch project
         const project = await db.query.projects.findFirst({
             where: and(eq(projects.id, id), eq(projects.userId, user.id)),

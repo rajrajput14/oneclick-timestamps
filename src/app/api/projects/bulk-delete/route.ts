@@ -22,6 +22,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
+        if ('error' in user) {
+            return NextResponse.json({ error: 'Database error', details: user.details }, { status: 500 });
+        }
+
         const { projectIds } = await req.json();
 
         if (!Array.isArray(projectIds) || projectIds.length === 0) {

@@ -18,6 +18,24 @@ export default async function DashboardPage(props: { searchParams: Promise<any> 
     // Middleware handles the redirect if not authenticated
     if (!user) return null;
 
+    // Diagnostic UI for database errors in production
+    if ('error' in user) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-8">
+                <div className="w-20 h-20 bg-red-500/10 rounded-3xl flex items-center justify-center text-4xl mb-4 border border-red-500/20">⚠️</div>
+                <h1 className="text-3xl font-black tracking-tighter">Database Connection Error</h1>
+                <p className="text-muted-foreground max-w-md">
+                    We couldn't connect to the database. This usually happens when the <code className="bg-secondary px-2 py-1 rounded">DATABASE_URL</code> environment variable is missing or incorrect in Vercel.
+                </p>
+                <div className="flex gap-4 items-center">
+                    <Button asChild>
+                        <Link href="/dashboard">Try Again</Link>
+                    </Button>
+                </div>
+            </div>
+        );
+    }
+
     const isPaymentSuccess = resolvedSearchParams?.payment === 'success';
 
     const isPaidUser = user.subscriptionStatus === 'active' || user.subscriptionStatus === 'trialing' || user.subscriptionStatus === 'on_trial';
