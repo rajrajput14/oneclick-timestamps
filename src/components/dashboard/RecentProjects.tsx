@@ -159,40 +159,40 @@ export default function RecentProjects({ userId }: { userId: string }) {
                             {/* Card Link */}
                             <Link
                                 href={`/dashboard/project/${project.id}`}
-                                className={`w-full max-w-[400px] flex flex-col p-8 rounded-[2.5rem] bg-card/40 border transition-all duration-500 group/item shadow-2xl relative overflow-hidden backdrop-blur-sm ${isSelected
-                                        ? 'border-indigo-500/50 bg-indigo-500/[0.08] ring-1 ring-indigo-500/20 scale-[0.98]'
-                                        : 'border-white/5 hover:border-indigo-500/30 hover:bg-card/60 hover:translate-y-[-4px]'
+                                className={`w-full max-w-[420px] flex flex-col p-6 sm:p-8 rounded-[2rem] sm:rounded-[2.5rem] bg-card/40 border transition-all duration-500 group/item shadow-2xl relative overflow-hidden backdrop-blur-sm ${isSelected
+                                    ? 'border-indigo-500/50 bg-indigo-500/[0.08] ring-1 ring-indigo-500/20 scale-[0.98]'
+                                    : 'border-white/5 hover:border-indigo-500/30 hover:bg-card/60 hover:translate-y-[-4px]'
                                     }`}
                             >
                                 {/* Selection Overlay */}
                                 <button
                                     onClick={(e) => toggleSelect(e, project.id)}
                                     className={`absolute right-6 top-6 z-20 w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${isSelected
-                                            ? 'bg-indigo-600 text-white shadow-lg'
-                                            : 'bg-white/5 text-transparent group-hover:text-muted-foreground/40 border border-white/5 hover:bg-white/10'
+                                        ? 'bg-indigo-600 text-white shadow-lg'
+                                        : 'bg-white/5 text-transparent group-hover:text-muted-foreground/40 border border-white/5 hover:bg-white/10'
                                         }`}
                                 >
                                     {isSelected ? <CheckCircle2 size={18} /> : <Square size={18} />}
                                 </button>
 
                                 {/* Card Content */}
-                                <div className="space-y-6 flex-1">
-                                    <div className="space-y-2">
-                                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-400/80">
-                                            <Box size={12} />
-                                            <span>Project ID: {project.id.slice(0, 8)}</span>
+                                <div className="space-y-4 sm:space-y-6 flex-1">
+                                    <div className="space-y-2 sm:space-y-3">
+                                        <div className="flex items-center gap-2 text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-indigo-400/80">
+                                            <Box size={10} className="sm:w-3 sm:h-3" />
+                                            <span>Project ID: {project.id.slice(0, 10)}</span>
                                         </div>
-                                        <h3 className="text-xl font-black uppercase tracking-tight text-foreground line-clamp-2 leading-tight min-h-[3rem]">
+                                        <h3 className="text-lg sm:text-xl font-black uppercase tracking-tight text-foreground line-clamp-2 leading-tight min-h-[2.5rem] sm:min-h-[3rem]">
                                             {project.title}
                                         </h3>
                                     </div>
 
-                                    <div className="flex flex-wrap items-center gap-4">
+                                    <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                                         <Badge
                                             variant={isCompleted ? 'success' : 'warning'}
-                                            className="px-4 py-1.5 text-[9px] font-black tracking-widest border border-white/5"
+                                            className="px-3 sm:px-4 py-1 sm:py-1.5 text-[8px] sm:text-[9px] font-black tracking-widest border border-white/5"
                                         >
-                                            <div className={`w-1.5 h-1.5 rounded-full mr-2 ${isCompleted ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-yellow-500 animate-pulse'}`} />
+                                            <div className={`w-1 sm:w-1.5 h-1 sm:h-1.5 rounded-full mr-1.5 sm:mr-2 ${isCompleted ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-yellow-500 animate-pulse'}`} />
                                             {project.status.toUpperCase()}
                                         </Badge>
 

@@ -100,6 +100,7 @@ export async function POST(req: NextRequest) {
                 console.log(`[Background] Starting pipeline for project ${project.id}`);
                 try {
                     const updateProgress = async (progress: number, description: string) => {
+                        console.log(`[Background] Project ${project.id} progress: ${progress}% - ${description}`);
                         try {
                             await db.update(projects)
                                 .set({ progress, statusDescription: description, updatedAt: new Date() })
@@ -241,6 +242,7 @@ export async function POST(req: NextRequest) {
                 console.log(`[Background] Starting file synthesis for project ${project.id}`);
                 try {
                     const updateProgress = async (progress: number, description: string) => {
+                        console.log(`[Background] Transcript project ${project.id} progress: ${progress}% - ${description}`);
                         try {
                             await db.update(projects)
                                 .set({ progress, statusDescription: description, updatedAt: new Date() })

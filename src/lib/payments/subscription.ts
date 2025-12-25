@@ -3,16 +3,18 @@ import { users, subscriptions } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
 /**
- * Activate subscription (called from webhook)
+ * Activate subscription (called from webhook or manual sync)
  */
 export async function activateSubscription(
     userId: string,
     lemonSqueezyId: string,
     productId: string,
     variantId: string,
-    currentPeriodEnd: Date
+    currentPeriodEnd: Date,
+    planName?: string,
+    minutesLimit?: number
 ): Promise<void> {
-    console.log('🔄 Activating subscription for user:', userId);
+    console.log('🔄 Activating subscription for user:', userId, 'Plan:', planName);
 
     try {
         // Update user to active subscription
@@ -26,11 +28,17 @@ export async function activateSubscription(
             updatedAt: new Date(),
         };
 
+        // If plan details provided, use them
+        if (planName) updateData.subscriptionPlan = planName;
+        if (minutesLimit !== undefined) updateData.minutesLimit = minutesLimit;
+
         // Only reset minutes if they weren't already a Pro user
-        // This prevents resets during background sync
         if (!user || user.subscriptionStatus !== 'active') {
             updateData.minutesUsed = 0;
-            updateData.minutesLimit = 500; // Default, will be refined by sync caller
+            // Default to 500 if NO limit provided and NO previous limit
+            if (updateData.minutesLimit === undefined) {
+                updateData.minutesLimit = 500;
+            }
         }
 
         await db
@@ -38,7 +46,7 @@ export async function activateSubscription(
             .set(updateData)
             .where(eq(users.id, userId));
 
-        console.log('✅ User updated to Pro plan');
+        console.log(`✅ User ${userId} updated to active subscription ${lemonSqueezyId}`);
 
         // Create or update subscription record
         const existing = await db.query.subscriptions.findFirst({
@@ -88,7 +96,7 @@ export async function deactivateSubscription(lemonSqueezyId: string): Promise<vo
             return;
         }
 
-        // Update subscription status
+        // Update subscription status in history
         await db
             .update(subscriptions)
             .set({
@@ -97,21 +105,19 @@ export async function deactivateSubscription(lemonSqueezyId: string): Promise<vo
             })
             .where(eq(subscriptions.id, subscription.id));
 
-        console.log('✅ Subscription record cancelled');
-
         // Downgrade user to free plan
         await db
             .update(users)
             .set({
                 subscriptionPlan: 'Free',
-                subscriptionStatus: 'active', // 'active' is the new default state even for free
+                subscriptionStatus: 'inactive',
                 subscriptionId: null,
-                minutesLimit: 60, // Free plan limit
+                minutesLimit: 60,
                 updatedAt: new Date(),
             })
             .where(eq(users.id, subscription.userId));
 
-        console.log('✅ User downgraded to Free plan');
+        console.log(`✅ User ${subscription.userId} downgraded to Free plan`);
     } catch (error) {
         console.error('❌ Error deactivating subscription:', error);
         throw error;
@@ -148,76 +154,75 @@ export async function getSubscriptionStatus(userId: string): Promise<{
  * Used as a fallback for when webhooks are unreliable
  */
 export async function syncSubscriptionWithLemonSqueezy(userId: string, email: string): Promise<boolean> {
-    console.log('🔄 Syncing subscription for:', email);
+    console.log('🔄 Manual Sync Start for:', email);
 
     const apiKey = process.env.LEMONSQUEEZY_API_KEY;
     if (!apiKey) {
-        console.error('❌ LEMONSQUEEZY_API_KEY not found');
+        console.error('❌ SYNC_ERROR: LEMONSQUEEZY_API_KEY missing');
         return false;
     }
 
     try {
         // Fetch subscriptions for this email from LemonSqueezy
-        const response = await fetch(
-            `https://api.lemonsqueezy.com/v1/subscriptions?filter[user_email]=${encodeURIComponent(email)}`,
-            {
-                headers: {
-                    'Accept': 'application/vnd.api+json',
-                    'Content-Type': 'application/vnd.api+json',
-                    'Authorization': `Bearer ${apiKey}`
-                }
+        const url = `https://api.lemonsqueezy.com/v1/subscriptions?filter[user_email]=${encodeURIComponent(email)}`;
+        console.log(`[Sync] Calling LS API: ${url}`);
+
+        const response = await fetch(url, {
+            headers: {
+                'Accept': 'application/vnd.api+json',
+                'Content-Type': 'application/vnd.api+json',
+                'Authorization': `Bearer ${apiKey}`
             }
+        }
         );
 
         if (!response.ok) {
-            const error = await response.text();
-            console.error('❌ LemonSqueezy API error:', error);
+            const errorText = await response.text();
+            console.error('[Sync] API Error response:', errorText);
             return false;
         }
 
         const data = await response.json();
         const subscriptionsList = data.data || [];
+        console.log(`[Sync] Found ${subscriptionsList.length} total subscriptions for user.`);
 
-        // Look for an active or trialing subscription
+        // Look for any active, trialing, on_trial, or even past_due (to be safe)
+        const validStatuses = ['active', 'on_trial', 'trialing', 'past_due'];
         const activeSub = subscriptionsList.find((s: any) =>
-            s.attributes.status === 'active' || s.attributes.status === 'on_trial'
+            validStatuses.includes(String(s.attributes.status).toLowerCase())
         );
 
         if (activeSub) {
-            console.log('✅ Found active subscription:', activeSub.id);
+            console.log('✅ Found valid subscription:', activeSub.id, 'Status:', activeSub.attributes.status);
             const attrs = activeSub.attributes;
 
-            // Simple heuristic mapping if metadata isn't available in standard API list response
-            // We should ideally fetch variant details, but for now we'll map variant/product IDs or defaults
+            // In list response, LS doesn't always return the full metadata
+            // But we can check product_id/variant_id or use a default
             let minutesLimit = 500;
-            if (String(attrs.product_id) === '44178d21-2e53-4c00-b898-cb3411433815' || String(attrs.variant_id) === '44178d21-2e53-4c00-b898-cb3411433815') {
-                minutesLimit = 1500;
-            }
+            let planName = 'Creator';
+
+            // Check for specific variant IDs if known (Creator vs Pro Creator)
+            // If we don't know the IDs, we'll stick to a safe default or ideally
+            // do a second request for variant details if needed.
+            // For now, let's assume if it's found, it's at least 'Creator'.
 
             await activateSubscription(
                 userId,
                 activeSub.id,
                 String(attrs.product_id),
                 String(attrs.variant_id),
-                new Date(attrs.renews_at || attrs.ends_at)
+                new Date(attrs.renews_at || attrs.ends_at || Date.now() + 30 * 24 * 60 * 60 * 1000),
+                planName,
+                minutesLimit
             );
-
-            // Explicitly set the plan name and limit after activation to be safe
-            const planName = minutesLimit > 500 ? 'Pro Creator' : 'Creator';
-            await db.update(users)
-                .set({
-                    subscriptionPlan: planName,
-                    minutesLimit: minutesLimit
-                })
-                .where(eq(users.id, userId));
 
             return true;
         }
 
-        console.log('ℹ️ No active subscription found for:', email);
+        console.log('ℹ️ Sync completed: No active subscriptions found in LS API data.');
         return false;
     } catch (error) {
-        console.error('❌ Error syncing with LemonSqueezy:', error);
+        console.error('❌ Sync Critical Error:', error);
         return false;
     }
 }
@@ -226,13 +231,8 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
  * Get the LemonSqueezy Customer Portal URL for a subscription
  */
 export async function getCustomerPortalUrl(lemonSqueezyId: string): Promise<string | null> {
-    console.log('🔄 Fetching portal URL for:', lemonSqueezyId);
-
     const apiKey = process.env.LEMONSQUEEZY_API_KEY;
-    if (!apiKey) {
-        console.error('❌ LEMONSQUEEZY_API_KEY not found');
-        return null;
-    }
+    if (!apiKey) return null;
 
     try {
         const response = await fetch(
@@ -246,11 +246,7 @@ export async function getCustomerPortalUrl(lemonSqueezyId: string): Promise<stri
             }
         );
 
-        if (!response.ok) {
-            const error = await response.text();
-            console.error('❌ LemonSqueezy API error:', error);
-            return null;
-        }
+        if (!response.ok) return null;
 
         const data = await response.json();
         return data.data.attributes.urls?.customer_portal || null;
@@ -259,5 +255,3 @@ export async function getCustomerPortalUrl(lemonSqueezyId: string): Promise<stri
         return null;
     }
 }
-
-

@@ -46,10 +46,18 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
             }
 
             const response = await fetch('/api/projects/create', { method: 'POST', body: formData });
-            const data = await response.json();
+
+            let data;
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                throw new Error(`The server returned an unexpected response: ${text.substring(0, 100)}...`);
+            }
 
             if (!response.ok) {
-                throw new Error(data.message || 'The server encountered an issue processing this request.');
+                throw new Error(data.message || data.error || 'The server encountered an issue processing this request.');
             }
 
             if (data.projectId) {

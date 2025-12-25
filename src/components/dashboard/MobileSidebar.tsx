@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LayoutDashboard, CreditCard, FolderOpen, X, LogOut } from 'lucide-react';
 import { SignOutButton } from '@clerk/nextjs';
+import { ThemeToggle } from '../layout/ThemeToggle';
 
 export default function MobileSidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
     const pathname = usePathname();
@@ -56,12 +57,15 @@ export default function MobileSidebar({ isOpen, onClose }: { isOpen: boolean; on
                         </div>
                         <span className="text-xl font-black tracking-tighter">OneClick</span>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="p-2 rounded-xl bg-white/5 text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-                    >
-                        <X size={20} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <ThemeToggle />
+                        <button
+                            onClick={onClose}
+                            className="p-3 rounded-xl bg-white/5 text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+                        >
+                            <X size={20} />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Navigation */}
@@ -76,8 +80,8 @@ export default function MobileSidebar({ isOpen, onClose }: { isOpen: boolean; on
                                 href={link.href}
                                 onClick={onClose}
                                 className={`flex items-center gap-4 p-5 rounded-[1.5rem] transition-all relative ${isActive
-                                        ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-500/20'
-                                        : 'text-muted-foreground hover:bg-white/5 hover:text-foreground border border-transparent'
+                                    ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-500/20'
+                                    : 'text-muted-foreground hover:bg-white/5 hover:text-foreground border border-transparent'
                                     }`}
                             >
                                 <Icon size={22} className="shrink-0" />

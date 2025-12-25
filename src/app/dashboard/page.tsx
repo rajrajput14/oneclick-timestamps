@@ -138,8 +138,8 @@ export default async function DashboardPage(props: { searchParams: Promise<any> 
             </div>
 
             {/* Core Workflow */}
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-12 lg:gap-16 items-start">
-                <div className="lg:col-span-3 space-y-8 md:space-y-12">
+            <div className="space-y-12 md:space-y-24">
+                <div className="space-y-8 md:space-y-12">
                     <div className="flex items-center gap-4 md:gap-6 px-4 md:px-10">
                         <div className="w-2 md:w-3 h-8 md:h-10 bg-indigo-600 rounded-full shadow-[0_0_15px_rgba(79,70,229,0.3)]" />
                         <div className="space-y-1 md:space-y-2">
@@ -147,12 +147,12 @@ export default async function DashboardPage(props: { searchParams: Promise<any> 
                             <p className="text-[10px] md:text-xs font-medium text-muted-foreground tracking-widest uppercase">Paste your YouTube video link and get ready-to-use timestamps.</p>
                         </div>
                     </div>
-                    <Card variant="glass" className="p-6 md:p-12 border-border shadow-2xl">
+                    <Card variant="glass" className="p-6 md:p-12 border-border shadow-2xl overflow-hidden">
                         <CreateProjectForm usageAllowed={minutesRemaining > 0} minutesRemaining={minutesRemaining} />
                     </Card>
                 </div>
 
-                <div className="lg:col-span-2 space-y-8 md:space-y-12">
+                <div className="space-y-8 md:space-y-12">
                     <div className="flex items-center gap-4 md:gap-6 px-4 md:px-10">
                         <div className="w-2 md:w-3 h-8 md:h-10 bg-purple-600 rounded-full shadow-[0_0_15px_rgba(168,85,247,0.3)]" />
                         <div className="space-y-1 md:space-y-2">
@@ -160,7 +160,7 @@ export default async function DashboardPage(props: { searchParams: Promise<any> 
                             <p className="text-[10px] md:text-xs font-medium text-muted-foreground tracking-widest uppercase">Workspace historical data</p>
                         </div>
                     </div>
-                    <Card variant="darker" className="p-4 md:p-6 min-h-[400px] lg:min-h-[600px] border-border/50 shadow-2xl">
+                    <Card variant="darker" className="p-6 md:p-12 min-h-[400px] border-border/50 shadow-2xl">
                         <RecentProjects userId={user.id} />
                     </Card>
                 </div>
