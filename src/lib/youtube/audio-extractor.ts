@@ -23,14 +23,11 @@ export async function extractAudio(
     const projectRoot = process.cwd();
     // Path to the local binary we downloaded
     const YTDLP_PATH = path.join(projectRoot, 'bin', 'yt-dlp');
-    const ABSOLUTE_FFMPEG_PATH = '/Users/macbook/Desktop/Antigravity-web1/oneclick-timestamps/node_modules/ffmpeg-static/ffmpeg';
+    const RELATIVE_FFMPEG_PATH = path.join(projectRoot, 'node_modules', 'ffmpeg-static', 'ffmpeg');
 
-    let resolvedFfmpegPath = ABSOLUTE_FFMPEG_PATH;
+    let resolvedFfmpegPath = RELATIVE_FFMPEG_PATH;
     if (!fs.existsSync(resolvedFfmpegPath)) {
-        resolvedFfmpegPath = ffmpegStatic || '';
-        if (resolvedFfmpegPath.includes('/ROOT/')) {
-            resolvedFfmpegPath = resolvedFfmpegPath.replace('/ROOT/', '/Users/macbook/');
-        }
+        resolvedFfmpegPath = ffmpegStatic || 'ffmpeg';
     }
 
     console.log('[AudioExtractor] Using FFmpeg at:', resolvedFfmpegPath);
@@ -50,6 +47,7 @@ export async function extractAudio(
             '--no-playlist',
             '--no-warnings',
             '--no-check-certificate',
+            '--no-interactive',
             '-o', '-',
             youtubeUrl
         ]);
@@ -121,9 +119,16 @@ export async function getVideoDuration(videoId: string): Promise<number> {
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
     return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            ytdlp.kill();
+            reject(new Error('Video duration check timed out after 30 seconds'));
+        }, 30000);
+
         const ytdlp = spawn(YTDLP_PATH, [
             '--print', 'duration',
             '--no-playlist',
+            '--no-interactive',
+            '--no-check-certificate',
             youtubeUrl
         ]);
 
@@ -133,6 +138,7 @@ export async function getVideoDuration(videoId: string): Promise<number> {
         });
 
         ytdlp.on('close', (code) => {
+            clearTimeout(timeout);
             if (code === 0) {
                 const duration = parseInt(output.trim());
                 if (!isNaN(duration)) {

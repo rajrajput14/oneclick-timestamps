@@ -7,6 +7,7 @@ import { getCurrentUser } from '@/lib/auth/user';
 import { getUserUsage, canProcessVideo, deductMinutes } from '@/lib/payments/usage';
 import { getYouTubeVideoId } from '@/lib/youtube/utils';
 import { runSTTPipeline } from '@/lib/youtube/stt-pipeline';
+import { fetchYouTubeTranscript } from '@/lib/youtube/transcript';
 import { parseTranscriptFile, segmentsToText } from '@/lib/transcript/parser';
 import { detectLanguage } from '@/lib/transcript/language';
 import { generateTimestampsFromText } from '@/lib/ai/gemini-ai';
@@ -75,15 +76,15 @@ export async function POST(req: NextRequest) {
 
             // [BACKGROUND PROCESS] Defer heavy lifting to avoid Vercel timeouts
             setTimeout(async () => {
-                console.log(`[Background] Starting sequence for project ${project.id}`);
+                console.log(`[Background] STARTING sequence for project ${project.id} (Video: ${videoId})`);
                 const updateProgress = async (progress: number, description: string, status: string = 'processing') => {
-                    console.log(`[Background] Project ${project.id} progress: ${progress}% - ${description}`);
+                    console.log(`[Background] [Project ${project.id}] Progress Update: ${progress}% - ${description} (Status: ${status})`);
                     try {
                         await db.update(projects)
                             .set({ progress, statusDescription: description, status, updatedAt: new Date() })
                             .where(eq(projects.id, project.id));
                     } catch (e) {
-                        console.error(`[Background] Progress update error for ${project.id}:`, e);
+                        console.error(`[Background] [Project ${project.id}] Progress update error:`, e);
                     }
                 };
 
@@ -91,10 +92,12 @@ export async function POST(req: NextRequest) {
                     // 1. Fetch Metadata (Slow)
                     let durationSeconds = 0;
                     try {
+                        console.log(`[Background] [Project ${project.id}] Fetching video duration...`);
                         const { getVideoDuration } = await import('@/lib/youtube/audio-extractor');
                         durationSeconds = await getVideoDuration(videoId!);
+                        console.log(`[Background] [Project ${project.id}] Video duration: ${durationSeconds}s`);
                     } catch (err) {
-                        console.error(`[Background] Duration fetch failed for ${videoId}:`, err);
+                        console.error(`[Background] [Project ${project.id}] Duration fetch failed:`, err);
                         await updateProgress(0, 'Failed to retrieve video metadata. Double check the URL.', 'failed');
                         return;
                     }
@@ -114,17 +117,60 @@ export async function POST(req: NextRequest) {
                         return;
                     }
 
-                    // 3. Start Pipeline
                     const PHASE1_DURATION = 1200; // 20 minutes
                     const isLongVideo = durationSeconds > PHASE1_DURATION;
 
-                    await updateProgress(15, 'Validating video signal...');
+                    // --- TRY YOUTUBE TRANSCRIPT FIRST (FAST FALLBACK) ---
+                    await updateProgress(10, 'Checking for available captions...');
+                    const ytTranscriptData = await fetchYouTubeTranscript(videoId!);
+
+                    if (ytTranscriptData) {
+                        console.log(`[Background] [Project ${project.id}] Found YouTube captions. Using fast path.`);
+                        await updateProgress(40, 'Captions found. Analyzing content...');
+
+                        const generatedTimestamps = await generateTimestampsFromText(
+                            ytTranscriptData.transcript,
+                            'english' // We can improve language detection here if needed
+                        );
+
+                        if (generatedTimestamps && generatedTimestamps.length > 0) {
+                            const timestampRecords = generatedTimestamps.map((ts: { time: string; title: string }, index: number) => ({
+                                projectId: project.id,
+                                timeSeconds: timestampToSeconds(ts.time),
+                                timeFormatted: ts.time,
+                                title: ts.title,
+                                position: index,
+                            }));
+                            await db.insert(timestamps).values(timestampRecords);
+
+                            await updateProgress(100, 'Completed', 'completed');
+                            await db.update(projects)
+                                .set({
+                                    status: 'completed',
+                                    progress: 100,
+                                    statusDescription: 'Completed',
+                                    language: 'English',
+                                    transcript: ytTranscriptData.transcript,
+                                    updatedAt: new Date()
+                                })
+                                .where(eq(projects.id, project.id));
+
+                            console.log(`[Background] [Project ${project.id}] Fast path successful`);
+                            return;
+                        }
+                    }
+
+                    // --- FALLBACK TO STT PIPELINE (SLOW PATH) ---
+                    console.log(`[Background] [Project ${project.id}] No YouTube captions found or AI failed. Rolling out STT Pipeline...`);
+                    await updateProgress(15, 'Starting deep audio analysis...');
                     await updateProgress(22, 'Extracting audio layers...');
 
+                    console.log(`[Background] [Project ${project.id}] Running STT Pipeline (Phase 1)...`);
                     const phase1Result = await runSTTPipeline(videoId!, updateProgress, {
                         durationSeconds: isLongVideo ? PHASE1_DURATION : undefined,
                         descriptionPrefix: isLongVideo ? '[Phase 1] ' : ''
                     });
+                    console.log(`[Background] [Project ${project.id}] Phase 1 complete. Found ${phase1Result.timestamps.length} timestamps.`);
 
                     await updateProgress(75, 'Structuring timestamps with AI...');
 
