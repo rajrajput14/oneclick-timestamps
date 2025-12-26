@@ -36,7 +36,19 @@ export default function BillingUsageMetrics({ initialData }: { initialData: Bill
         }
     }, []);
 
-    // Effect to handle payment success detection (could be triggered by parent or URL)
+    // Initial refresh on mount to ensure freshness
+    useEffect(() => {
+        refreshStatus();
+    }, [refreshStatus]);
+
+    // Handle external update requests
+    useEffect(() => {
+        const handleUpdate = () => refreshStatus();
+        window.addEventListener('billing-update', handleUpdate);
+        return () => window.removeEventListener('billing-update', handleUpdate);
+    }, [refreshStatus]);
+
+    // Effect to handle payment success detection
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         if (params.get('payment') === 'success') {
@@ -65,9 +77,9 @@ export default function BillingUsageMetrics({ initialData }: { initialData: Bill
 
             {/* Account Status Badge (Floating in parent usually, but we'll provide it here or handle separately) */}
             <div className="flex justify-end -mb-8">
-                <Badge variant={isPaidUser ? 'success' : 'default'} className="px-6 md:px-8 py-2 md:py-3 text-[10px] md:text-xs font-bold tracking-wide border-border/50">
-                    {isPaidUser ? <Sparkles className="w-3 h-3 md:w-4 md:h-4 mr-2 md:mr-3" /> : <ShieldCheck className="w-3 h-3 md:w-4 md:h-4 mr-2 md:mr-3" />}
-                    {isPaidUser ? `${data.plan.toUpperCase()} ACTIVE` : 'FREE TIER'}
+                <Badge variant={isPaidUser ? (data.plan === 'Free' ? 'default' : 'success') : 'default'} className="px-6 md:px-8 py-2 md:py-3 text-[10px] md:text-xs font-bold tracking-wide border-border/50">
+                    {isPaidUser && data.plan !== 'Free' ? <Sparkles className="w-3 h-3 md:w-4 md:h-4 mr-2 md:mr-3" /> : <ShieldCheck className="w-3 h-3 md:w-4 md:h-4 mr-2 md:mr-3" />}
+                    {isPaidUser ? (data.plan === 'Free' ? 'FREE TIER' : `${data.plan.toUpperCase()} ACTIVE`) : 'ACCOUNT INACTIVE'}
                 </Badge>
             </div>
 

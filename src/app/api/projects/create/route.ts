@@ -155,6 +155,7 @@ export async function POST(req: NextRequest) {
                                 })
                                 .where(eq(projects.id, project.id));
 
+                            await deductMinutes(user.id, durationSeconds || 60);
                             console.log(`[Background] [Project ${project.id}] Fast path successful`);
                             return;
                         }
