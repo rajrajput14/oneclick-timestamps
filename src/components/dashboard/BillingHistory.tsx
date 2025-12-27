@@ -20,6 +20,7 @@ interface Order {
     order_type: string;
     amount: string;
     status: string;
+    receipt_url?: string;
 }
 
 export default function BillingHistory() {
@@ -102,6 +103,7 @@ export default function BillingHistory() {
                                             <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center">Type</th>
                                             <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Amount</th>
                                             <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Status</th>
+                                            <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Receipt</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-white/5">
@@ -121,6 +123,19 @@ export default function BillingHistory() {
                                                         }`}>
                                                         {order.status}
                                                     </span>
+                                                </td>
+                                                <td className="px-8 py-5 text-right">
+                                                    {order.receipt_url && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-8 gap-2 bg-indigo-600/10 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/20"
+                                                            onClick={() => window.open(order.receipt_url, '_blank')}
+                                                        >
+                                                            <FileText className="w-3.5 h-3.5" />
+                                                            <span className="text-[9px] font-black uppercase tracking-widest">Download</span>
+                                                        </Button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}
@@ -173,9 +188,17 @@ export default function BillingHistory() {
                 )}
             </Card>
 
-            <p className="text-[10px] text-muted-foreground italic px-2">
-                * Data is fetched in real-time from Lemon Squeezy for security and accuracy.
-            </p>
+            <div className="flex flex-col md:flex-row gap-4 px-2">
+                <p className="text-[10px] text-muted-foreground italic flex-1">
+                    * Data is fetched in real-time from Lemon Squeezy for security and accuracy.
+                </p>
+                <div className="flex items-center gap-2 px-3 py-1 bg-indigo-500/5 rounded-full border border-indigo-500/10">
+                    <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" />
+                    <p className="text-[9px] font-black uppercase tracking-widest text-indigo-400">
+                        Tip: Check "Orders" for Add-on receipts and "Invoices" for Subscription bills.
+                    </p>
+                </div>
+            </div>
         </div>
     );
 }

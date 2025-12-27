@@ -65,7 +65,8 @@ export async function GET(req: NextRequest) {
                 product_name: attrs.first_order_item?.product_name || 'OneClick Timestamps',
                 order_type: type,
                 amount: attrs.total_formatted,
-                status: attrs.status
+                status: attrs.status,
+                receipt_url: attrs.urls?.receipt || null
             };
         });
 

@@ -428,7 +428,12 @@ export async function ensureLemonSqueezyCustomerId(userId: string, email: string
         where: eq(users.id, userId),
     });
 
-    if (user?.lemonsqueezyCustomerId) {
+    if (!user) {
+        console.error(`❌ [Billing] User ${userId} not found in DB`);
+        return null;
+    }
+
+    if (user.lemonsqueezyCustomerId) {
         return user.lemonsqueezyCustomerId;
     }
 
@@ -450,9 +455,8 @@ export async function ensureLemonSqueezyCustomerId(userId: string, email: string
             const customers = data.data || [];
             if (customers.length > 0) {
                 const customerId = String(customers[0].id);
-                console.log(`✅ [Billing] Found Customer ID: ${customerId} for ${email}`);
+                console.log(`✅ [Billing] Found Customer ID: ${customerId} for ${email} (via Email)`);
 
-                // Update DB to avoid searching again
                 await db.update(users)
                     .set({ lemonsqueezyCustomerId: customerId })
                     .where(eq(users.id, userId));
@@ -460,6 +464,30 @@ export async function ensureLemonSqueezyCustomerId(userId: string, email: string
                 return customerId;
             }
         }
+
+        // --- SECONDARY FALLBACK: Check existing subscription record ---
+        if (user.subscriptionId) {
+            console.log(`🔍 [Billing] Falling back to subscription lookup: ${user.subscriptionId}`);
+            const subUrl = `https://api.lemonsqueezy.com/v1/subscriptions/${user.subscriptionId}`;
+            const subRes = await fetch(subUrl, {
+                headers: { 'Accept': 'application/vnd.api+json', 'Authorization': `Bearer ${apiKey}` }
+            });
+
+            if (subRes.ok) {
+                const subData = await subRes.json();
+                const customerId = String(subData.data.attributes.customer_id);
+                if (customerId) {
+                    console.log(`✅ [Billing] Found Customer ID: ${customerId} (via Subscription ID)`);
+
+                    await db.update(users)
+                        .set({ lemonsqueezyCustomerId: customerId })
+                        .where(eq(users.id, userId));
+
+                    return customerId;
+                }
+            }
+        }
+
         console.log(`⚠️ [Billing] No customer found in LS for ${email}`);
         return null;
     } catch (error) {
