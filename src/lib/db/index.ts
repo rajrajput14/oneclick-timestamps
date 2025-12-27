@@ -1,5 +1,5 @@
-import { drizzle } from 'drizzle-orm/neon-http';
-import { neon } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-serverless';
+import { Pool } from '@neondatabase/serverless';
 import * as schema from './schema';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -24,5 +24,7 @@ if (!databaseUrl && process.env.NODE_ENV === 'production') {
 }
 
 const sanitizedUrl = sanitizeDatabaseUrl(databaseUrl);
-const sql = neon(sanitizedUrl);
-export const db = drizzle(sql, { schema });
+
+// Using Pool with neon-serverless for WebSocket support (required for transactions)
+const pool = new Pool({ connectionString: sanitizedUrl });
+export const db = drizzle(pool, { schema });
