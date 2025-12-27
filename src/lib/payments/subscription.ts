@@ -27,8 +27,8 @@ export async function activateSubscription(
     console.log('🔄 Activating subscription for user:', userId, 'Plan:', planName);
 
     try {
-        // Update user to active subscription
-        const user = await db.query.users.findFirst({
+        // Update user to active subscription (uses tx for transactional mapping)
+        const user = await tx.query.users.findFirst({
             where: eq(users.id, userId),
         });
 
