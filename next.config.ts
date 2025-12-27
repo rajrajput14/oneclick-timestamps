@@ -11,8 +11,9 @@ const nextConfig: NextConfig = {
     if (dev) {
       config.watchOptions = {
         ignored: [
-          '**/node_modules/**',
+          '**/.git/**',
           '**/.next/**',
+          '**/node_modules/**',
           '**/tmp/**',
           '**/temp/**',
           '**/uploads/**',
@@ -20,7 +21,8 @@ const nextConfig: NextConfig = {
           '**/*.wav',
           '**/*.mp3',
           '**/*.mp4',
-          '**/*.json',
+          '**/diagnostic*.json',
+          '**/runtime*.json',
           '**/*-player-script.js'
         ],
       };

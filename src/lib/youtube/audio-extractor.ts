@@ -48,6 +48,8 @@ export async function extractAudio(
             '--no-warnings',
             '--no-check-certificate',
             '--no-interactive',
+            '--no-cache-dir',
+            '--cache-dir', '/tmp/yt-dlp-cache',
             '-o', '-',
             youtubeUrl
         ]);
@@ -129,6 +131,8 @@ export async function getVideoDuration(videoId: string): Promise<number> {
             '--no-playlist',
             '--no-interactive',
             '--no-check-certificate',
+            '--no-cache-dir',
+            '--cache-dir', '/tmp/yt-dlp-cache',
             youtubeUrl
         ]);
 

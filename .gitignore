@@ -55,14 +55,26 @@ speech-to-text-service.json
 config/*.json
 
 # Runtime and Generated Files (Fixes Reload Loop)
-.next
-node_modules
-*.log
-*.wav
-*.mp3
-*.mp4
-*.json
-tmp
-temp
-uploads
-*-player-script.js
+**/.next/**
+**/node_modules/**
+**/*.log
+**/*.wav
+**/*.mp3
+**/*.mp4
+**/diagnostic*.json
+**/runtime*.json
+**/tmp/**/*.json
+**/temp/**/*.json
+**/uploads/**/*.json
+**/tmp/**
+**/temp/**
+**/uploads/**
+**/*-player-script.js
+**/.git/**
+**/.vscode/**
+**/.idea/**
+**/dist/**
+**/build/**
+**/out/**
+**/coverage/**
+/next-env.d.ts
