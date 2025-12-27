@@ -1,12 +1,18 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useRef } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 
 export default function PaymentRefresh() {
     const router = useRouter();
+    const pathname = usePathname();
+
+    const hasTriggered = useRef(false);
 
     useEffect(() => {
+        if (hasTriggered.current) return;
+        hasTriggered.current = true;
+
         // 1. Trigger an immediate manual sync via API to bypass webhook delay
         const triggerSync = async () => {
             try {
@@ -19,20 +25,24 @@ export default function PaymentRefresh() {
 
         triggerSync();
 
-        // 2. Aggressive polling for 10 seconds (every 2s) to catch eventual consistency
+        // 2. Poll every 3 seconds instead of 2
         const interval = setInterval(() => {
             router.refresh();
-        }, 2000);
+        }, 3000);
 
-        const timeout = setTimeout(() => {
+        // 3. Clear URL after 8 seconds so this component stops rendering on next refresh
+        const urlCleanup = setTimeout(() => {
+            router.replace(pathname, { scroll: false });
+
+            // Once URL is clean, we can stop the aggressive polling
             clearInterval(interval);
-        }, 10000);
+        }, 8000);
 
         return () => {
             clearInterval(interval);
-            clearTimeout(timeout);
+            clearTimeout(urlCleanup);
         };
-    }, [router]);
+    }, [router, pathname]);
 
     return (
         <div className="fixed top-8 right-8 z-[100] animate-in slide-in-from-right-10 duration-500">
