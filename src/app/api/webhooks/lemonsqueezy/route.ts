@@ -12,13 +12,19 @@ export async function POST(req: NextRequest) {
     try {
         const payload = await req.text();
         const signature = req.headers.get('x-signature') || '';
-        const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET || '';
+        const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
+
+        if (!secret) {
+            console.error('❌ WEBHOOK_ERROR: LEMONSQUEEZY_WEBHOOK_SECRET is not set in environment variables.');
+            return new Response('Webhook secret not configured', { status: 500 });
+        }
 
         // Verify signature
         const hmac = crypto.createHmac('sha256', secret);
         const digest = hmac.update(payload).digest('hex');
 
         if (signature !== digest) {
+            console.error('❌ WEBHOOK_ERROR: Invalid signature. Verify your secret matches in LemonSqueezy settings.');
             return new Response('Invalid signature', { status: 401 });
         }
 
