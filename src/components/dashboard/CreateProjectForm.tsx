@@ -11,6 +11,8 @@ interface ProgressState {
     percent: number;
     description: string;
     status: string;
+    step?: number;
+    processedMinutes?: number;
 }
 
 type FormView = 'idle' | 'processing' | 'error' | 'success';
@@ -26,7 +28,8 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
     const [progress, setProgress] = useState<ProgressState>({
         percent: 0,
         description: 'Synchronizing with Neural Grid...',
-        status: 'pending'
+        status: 'pending',
+        step: 1
     });
 
     // Neural Creep Logic: Never let the user see a frozen bar
@@ -122,7 +125,9 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
                 setProgress({
                     percent: project.progress || 0,
                     description: project.statusDescription || 'Processing...',
-                    status: project.status
+                    status: project.status,
+                    step: project.progressStep || 1,
+                    processedMinutes: project.processedMinutes
                 });
 
                 if (project.status === 'completed') {

@@ -77,11 +77,17 @@ export async function POST(req: NextRequest) {
             // [BACKGROUND PROCESS] Defer heavy lifting to avoid Vercel timeouts
             setTimeout(async () => {
                 console.log(`[Background] STARTING sequence for project ${project.id} (Video: ${videoId})`);
-                const updateProgress = async (progress: number, description: string, status: string = 'processing') => {
-                    console.log(`[Background] [Project ${project.id}] Progress Update: ${progress}% - ${description} (Status: ${status})`);
+                const updateProgress = async (step: number, percent: number, message: string, status: string = 'processing') => {
+                    console.log(`[Background] [Project ${project.id}] Step ${step} (${percent}%): ${message} (Status: ${status})`);
                     try {
                         await db.update(projects)
-                            .set({ progress, statusDescription: description, status, updatedAt: new Date() })
+                            .set({
+                                progressStep: step,
+                                progress: percent,
+                                statusDescription: message,
+                                status,
+                                updatedAt: new Date()
+                            })
                             .where(eq(projects.id, project.id));
                     } catch (e) {
                         console.error(`[Background] [Project ${project.id}] Progress update error:`, e);
@@ -89,7 +95,7 @@ export async function POST(req: NextRequest) {
                 };
 
                 try {
-                    await updateProgress(5, 'Job Accepted', 'processing');
+                    await updateProgress(1, 5, 'Job Accepted', 'processing');
                     // 1. Fetch Metadata (Slow)
                     let durationSeconds = 0;
                     try {
@@ -99,7 +105,7 @@ export async function POST(req: NextRequest) {
                         console.log(`[Background] [Project ${project.id}] Video duration: ${durationSeconds}s`);
                     } catch (err) {
                         console.error(`[Background] [Project ${project.id}] Duration fetch failed:`, err);
-                        await updateProgress(0, 'Failed to retrieve video metadata. Double check the URL.', 'failed');
+                        await updateProgress(1, 0, 'Failed to retrieve video metadata. Double check the URL.', 'failed');
                         return;
                     }
 
@@ -111,6 +117,8 @@ export async function POST(req: NextRequest) {
                             .set({
                                 status: 'failed',
                                 statusDescription: 'Insufficient credits.',
+                                progressStep: 1,
+                                progress: 0,
                                 errorMessage: `This video requires ${Math.round(durationSeconds / 60)} minutes. You have ${usageCheck.remainingMinutes} minutes left.`,
                                 updatedAt: new Date()
                             })
@@ -122,19 +130,21 @@ export async function POST(req: NextRequest) {
                     const isLongVideo = durationSeconds > PHASE1_DURATION;
 
                     // --- TRY YOUTUBE TRANSCRIPT FIRST (FAST FALLBACK) ---
-                    await updateProgress(10, 'Checking for available captions...');
+                    await updateProgress(1, 15, 'Checking for available captions...');
                     const ytTranscriptData = await fetchYouTubeTranscript(videoId!);
 
                     if (ytTranscriptData) {
                         console.log(`[Background] [Project ${project.id}] Found YouTube captions. Using fast path.`);
-                        await updateProgress(40, 'Captions found. Analyzing content...');
+                        await updateProgress(2, 50, 'Captions found. Analyzing content...');
 
                         const generatedTimestamps = await generateTimestampsFromText(
                             ytTranscriptData.transcript,
-                            'english' // We can improve language detection here if needed
+                            'english'
                         );
 
                         if (generatedTimestamps && generatedTimestamps.length > 0) {
+                            await updateProgress(3, 90, 'Finalizing chapters...');
+
                             const timestampRecords = generatedTimestamps.map((ts: { time: string; title: string }, index: number) => ({
                                 projectId: project.id,
                                 timeSeconds: timestampToSeconds(ts.time),
@@ -142,21 +152,28 @@ export async function POST(req: NextRequest) {
                                 title: ts.title,
                                 position: index,
                             }));
-                            await db.insert(timestamps).values(timestampRecords);
 
-                            await updateProgress(100, 'Completed', 'completed');
-                            await db.update(projects)
-                                .set({
-                                    status: 'completed',
-                                    progress: 100,
-                                    statusDescription: 'Completed',
-                                    language: 'English',
-                                    transcript: ytTranscriptData.transcript,
-                                    updatedAt: new Date()
-                                })
-                                .where(eq(projects.id, project.id));
+                            // Final Atomic Transaction
+                            const processedMinutes = Math.ceil(durationSeconds / 60);
+                            await db.transaction(async (tx) => {
+                                await tx.insert(timestamps).values(timestampRecords);
 
-                            await deductMinutes(user.id, durationSeconds || 60);
+                                await tx.update(projects)
+                                    .set({
+                                        status: 'completed',
+                                        progress: 100,
+                                        progressStep: 3,
+                                        statusDescription: 'Completed',
+                                        language: 'English',
+                                        transcript: ytTranscriptData.transcript,
+                                        processedMinutes,
+                                        updatedAt: new Date()
+                                    })
+                                    .where(eq(projects.id, project.id));
+
+                                await deductMinutes(user.id, durationSeconds || 60, tx);
+                            });
+
                             console.log(`[Background] [Project ${project.id}] Fast path successful`);
                             return;
                         }
@@ -164,26 +181,26 @@ export async function POST(req: NextRequest) {
 
                     // --- FALLBACK TO STT PIPELINE (SLOW PATH) ---
                     console.log(`[Background] [Project ${project.id}] No YouTube captions found or AI failed. Rolling out STT Pipeline...`);
-                    await updateProgress(15, 'Starting deep audio analysis...');
-                    await updateProgress(20, 'Extracting audio layers...', 'processing');
+                    await updateProgress(1, 20, 'Starting deep audio analysis...');
+                    await updateProgress(1, 33, 'Extracting audio layers...');
 
                     console.log(`[Background] [Project ${project.id}] Running STT Pipeline (Phase 1)...`);
                     const phase1Result = await runSTTPipeline(videoId!, async (p, d) => {
-                        // Map internal STT progress to our 20-80% range
-                        // 20% + (p * 0.3) -> ends at 50%
-                        const mappedProgress = Math.floor(20 + (p * 0.3));
-                        await updateProgress(mappedProgress, d, 'processing');
+                        // Map internal STT progress to Step 2 (34-66%)
+                        const mappedPercent = Math.floor(34 + (p * 0.32));
+                        await updateProgress(2, mappedPercent, d, 'processing');
                     }, {
                         durationSeconds: isLongVideo ? PHASE1_DURATION : undefined,
                         descriptionPrefix: isLongVideo ? '[Phase 1] ' : ''
                     });
                     console.log(`[Background] [Project ${project.id}] Phase 1 complete. Found ${phase1Result.timestamps.length} timestamps.`);
 
-                    await updateProgress(50, 'Speech processing segment 1 complete...', 'processing');
-                    await updateProgress(80, 'Structuring timestamps with AI...', 'processing');
+                    await updateProgress(2, 66, 'Speech processing segment 1 complete...');
+                    await updateProgress(3, 85, 'Structuring topics with AI...');
 
+                    let timestampRecords: any[] = [];
                     if (phase1Result.timestamps && phase1Result.timestamps.length > 0) {
-                        const timestampRecords = phase1Result.timestamps.map((ts: { time: string; title: string }, index: number) => ({
+                        timestampRecords = phase1Result.timestamps.map((ts: { time: string; title: string }, index: number) => ({
                             projectId: project.id,
                             timeSeconds: timestampToSeconds(ts.time),
                             timeFormatted: ts.time,
@@ -194,51 +211,85 @@ export async function POST(req: NextRequest) {
                     }
 
                     if (!isLongVideo) {
-                        await updateProgress(95, 'Finalizing project...');
-                        await db.update(projects)
-                            .set({
-                                status: 'completed',
-                                progress: 100,
-                                statusDescription: 'Completed',
-                                language: phase1Result.language,
-                                transcript: 'Transcript generated via STT.',
-                                updatedAt: new Date()
-                            })
-                            .where(eq(projects.id, project.id));
+                        await updateProgress(3, 95, 'Finalizing project...');
 
-                        await deductMinutes(user.id, phase1Result.processedSeconds);
+                        const processedMinutes = Math.ceil(phase1Result.processedSeconds / 60);
+
+                        await db.transaction(async (tx) => {
+                            if (timestampRecords.length > 0) {
+                                await tx.insert(timestamps).values(timestampRecords);
+                            }
+
+                            await tx.update(projects)
+                                .set({
+                                    status: 'completed',
+                                    progress: 100,
+                                    progressStep: 3,
+                                    statusDescription: 'Completed',
+                                    language: phase1Result.language,
+                                    transcript: 'Transcript generated via STT.',
+                                    processedMinutes,
+                                    updatedAt: new Date()
+                                })
+                                .where(eq(projects.id, project.id));
+
+                            await deductMinutes(user.id, phase1Result.processedSeconds, tx);
+                        });
+
                         console.log(`[Background] Project ${project.id} successful`);
                         return;
                     }
 
                     // Phase 2 logic (Long Videos)
-                    await updateProgress(85, 'Initial timestamps ready. Refining full video...');
-                    const phase2Result = await runSTTPipeline(videoId!, updateProgress, {
+                    await updateProgress(3, 85, 'Initial timestamps ready. Refining full video...');
+                    const phase2Result = await runSTTPipeline(videoId!, async (p, d) => {
+                        // For long videos, we stay in Step 3 for refinement
+                        const mappedPercent = Math.floor(86 + (p * 0.13));
+                        await updateProgress(3, mappedPercent, d, 'processing');
+                    }, {
                         seekSeconds: PHASE1_DURATION,
                         descriptionPrefix: '[Phase 2] '
                     });
 
                     if (phase2Result.timestamps && phase2Result.timestamps.length > 0) {
-                        const timestampRecords = phase2Result.timestamps.map((ts: { time: string; title: string }, index: number) => ({
+                        const phase2Records = phase2Result.timestamps.map((ts: { time: string; title: string }, index: number) => ({
                             projectId: project.id,
                             timeSeconds: timestampToSeconds(ts.time),
                             timeFormatted: ts.time,
                             title: ts.title,
-                            position: phase1Result.timestamps.length + index,
+                            position: timestampRecords.length + index,
                         }));
-                        await db.insert(timestamps).values(timestampRecords);
+
+                        const totalProcessedSeconds = phase1Result.processedSeconds + phase2Result.processedSeconds;
+                        const processedMinutes = Math.ceil(totalProcessedSeconds / 60);
+
+                        await db.transaction(async (tx) => {
+                            // Phase 1 timestamps already inserted? No, we didn't insert them yet in the slow path logic above.
+                            // Wait, looking at the code above:
+                            // if (phase1Result.timestamps && phase1Result.timestamps.length > 0) { ... timestampRecords = ... }
+                            // If isLongVideo, we SKIP the "if (!isLongVideo)" block and come here.
+
+                            if (timestampRecords.length > 0) {
+                                await tx.insert(timestamps).values(timestampRecords);
+                            }
+                            if (phase2Records.length > 0) {
+                                await tx.insert(timestamps).values(phase2Records);
+                            }
+
+                            await tx.update(projects)
+                                .set({
+                                    status: 'completed',
+                                    progress: 100,
+                                    progressStep: 3,
+                                    statusDescription: 'Refinement complete.',
+                                    processedMinutes,
+                                    updatedAt: new Date()
+                                })
+                                .where(eq(projects.id, project.id));
+
+                            await deductMinutes(user.id, totalProcessedSeconds, tx);
+                        });
                     }
-
-                    await db.update(projects)
-                        .set({
-                            status: 'completed',
-                            progress: 100,
-                            statusDescription: 'Refinement complete.',
-                            updatedAt: new Date()
-                        })
-                        .where(eq(projects.id, project.id));
-
-                    await deductMinutes(user.id, phase2Result.processedSeconds);
 
                 } catch (error: any) {
                     console.error(`[Background] Critical Failure for ${project.id}:`, error);
@@ -275,6 +326,7 @@ export async function POST(req: NextRequest) {
                     language: 'Detecting...',
                     status: 'pending',
                     progress: 0,
+                    progressStep: 1,
                     statusDescription: 'Request Pending'
                 })
                 .returning();
@@ -283,31 +335,39 @@ export async function POST(req: NextRequest) {
             setTimeout(async () => {
                 console.log(`[Background] Starting file synthesis for project ${project.id}`);
                 try {
-                    const updateProgress = async (progress: number, description: string, status: string = 'processing') => {
-                        console.log(`[Background] Transcript project ${project.id} progress: ${progress}% - ${description}`);
+                    const updateProgress = async (step: number, percent: number, message: string, status: string = 'processing') => {
+                        console.log(`[Background] Transcript project ${project.id} Step ${step} (${percent}%): ${message}`);
                         try {
                             await db.update(projects)
-                                .set({ progress, statusDescription: description, status, updatedAt: new Date() })
+                                .set({
+                                    progressStep: step,
+                                    progress: percent,
+                                    statusDescription: message,
+                                    status,
+                                    updatedAt: new Date()
+                                })
                                 .where(eq(projects.id, project.id));
                         } catch (e) {
                             console.error(`[Background] File progress update error for ${project.id}:`, e);
                         }
                     };
 
-                    await updateProgress(5, 'Job Accepted', 'processing');
+                    await updateProgress(1, 5, 'Job Accepted', 'processing');
 
-                    await updateProgress(20, 'Analyzing structure...');
+                    await updateProgress(1, 15, 'Analyzing structure...');
                     const segments = parseTranscriptFile(content, filename);
                     const fullTranscript = segmentsToText(segments);
 
-                    await updateProgress(30, 'Detecting intelligence...');
+                    await updateProgress(2, 40, 'Detecting intelligence...');
                     const languageInfo = await detectLanguage(fullTranscript);
 
-                    await updateProgress(50, 'AI Synthesis in progress...');
+                    await updateProgress(3, 70, 'AI Synthesis in progress...');
                     const generatedTimestamps = await generateTimestampsFromText(fullTranscript, languageInfo.language);
 
                     // Save timestamps
                     if (generatedTimestamps && generatedTimestamps.length > 0) {
+                        await updateProgress(3, 90, 'Finalizing project...');
+
                         const timestampRecords = generatedTimestamps.map((ts: { time: string; title: string }, index: number) => ({
                             projectId: project.id,
                             timeSeconds: timestampToSeconds(ts.time),
@@ -315,24 +375,27 @@ export async function POST(req: NextRequest) {
                             title: ts.title,
                             position: index,
                         }));
-                        await db.insert(timestamps).values(timestampRecords);
+
+                        await db.transaction(async (tx) => {
+                            await tx.insert(timestamps).values(timestampRecords);
+
+                            await tx.update(projects)
+                                .set({
+                                    status: 'completed',
+                                    progress: 100,
+                                    progressStep: 3,
+                                    statusDescription: 'Completed',
+                                    language: languageInfo.language,
+                                    transcript: fullTranscript,
+                                    processedMinutes: 1, // Files are treated as 1 minute
+                                    updatedAt: new Date()
+                                })
+                                .where(eq(projects.id, project.id));
+
+                            await deductMinutes(user.id, 60, tx);
+                        });
                     }
 
-                    // Final update
-                    await db.update(projects)
-                        .set({
-                            status: 'completed',
-                            progress: 100,
-                            statusDescription: 'Completed',
-                            language: languageInfo.language,
-                            transcript: fullTranscript,
-                            updatedAt: new Date()
-                        })
-                        .where(eq(projects.id, project.id));
-
-                    // For manual transcript files, we treat it as 1 credit or minimum fee if needed.
-                    // But usually these are small. Let's assume 1 minute if duration is unknown.
-                    await deductMinutes(user.id, 60);
                     console.log(`[Background] File project ${project.id} completed`);
 
                 } catch (error: any) {

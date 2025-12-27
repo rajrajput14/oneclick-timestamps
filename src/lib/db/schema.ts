@@ -39,6 +39,8 @@ export const projects = pgTable('projects', {
     language: text('language'),
     status: text('status').default('processing'), // 'processing', 'completed', 'failed'
     progress: integer('progress').default(0), // 0 to 100
+    progressStep: integer('progress_step').default(1), // 1 | 2 | 3
+    processedMinutes: integer('processed_minutes').default(0),
     statusDescription: text('status_description').default('Queued'),
     errorMessage: text('error_message'),
     createdAt: timestamp('created_at').defaultNow(),

@@ -2,6 +2,8 @@ import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq, sql } from 'drizzle-orm';
 
+type DBOrTransaction = any;
+
 /**
  * Get user usage data
  */
@@ -47,11 +49,18 @@ export async function canProcessVideo(userId: string, durationInSeconds: number)
 /**
  * Deduct minutes from user balance
  * Logic: Use subscription minutes (minutesUsed) first, then addonMinutes.
+ * STRICT ORDER: 1. Subscription, 2. Add-on. Non-negative.
  */
-export async function deductMinutes(userId: string, durationInSeconds: number): Promise<void> {
-    const user = await db.query.users.findFirst({
-        where: eq(users.id, userId),
-    });
+export async function deductMinutes(
+    userId: string,
+    durationInSeconds: number,
+    tx: DBOrTransaction = db
+): Promise<void> {
+    const [user] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
 
     if (!user) throw new Error('User not found');
 
@@ -63,7 +72,13 @@ export async function deductMinutes(userId: string, durationInSeconds: number): 
     let fromSub = Math.min(minutesToDeduct, subRemaining);
     let fromAddon = minutesToDeduct - fromSub;
 
-    await db
+    // Check if user has enough in total to avoid negative balance
+    const totalAvailable = subRemaining + (user.addonMinutes || 0);
+    if (totalAvailable < minutesToDeduct) {
+        throw new Error(`Insufficient balance: Need ${minutesToDeduct}, have ${totalAvailable}`);
+    }
+
+    await tx
         .update(users)
         .set({
             minutesUsed: sql`${users.minutesUsed} + ${fromSub}`,
