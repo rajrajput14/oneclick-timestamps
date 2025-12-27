@@ -53,3 +53,15 @@ next-env.d.ts
 service-account.json
 speech-to-text-service.json
 config/*.json
+
+# Runtime and Generated Files (Fixes Reload Loop)
+.next
+node_modules
+*.log
+*.wav
+*.mp3
+*.mp4
+*.json
+tmp
+temp
+uploads

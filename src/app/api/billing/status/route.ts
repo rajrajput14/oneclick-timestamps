@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
         return NextResponse.json({
             plan: usage.plan,
-            status: usage.status,
+            subscriptionStatus: usage.status,
             minutesLimit: usage.minutesLimit,
             minutesUsed: usage.minutesUsed,
             addonMinutes: usage.addonMinutes,

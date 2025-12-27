@@ -33,7 +33,7 @@ export async function extractAudio(
     console.log('[AudioExtractor] Using FFmpeg at:', resolvedFfmpegPath);
     ffmpeg.setFfmpegPath(resolvedFfmpegPath);
 
-    const tempFilePath = path.join(tmpdir(), `audio-${uuidv4()}.wav`);
+    const tempFilePath = path.join('/tmp', `audio-${uuidv4()}.wav`);
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
     return new Promise((resolve, reject) => {

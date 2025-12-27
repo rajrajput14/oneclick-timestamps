@@ -9,6 +9,7 @@ import { eq } from 'drizzle-orm';
 import Link from 'next/link';
 import ManageSubscriptionButton from '@/components/dashboard/ManageSubscriptionButton';
 import PaymentRefresh from '@/components/dashboard/PaymentRefresh';
+import BillingUsageMetrics from '@/components/dashboard/BillingUsageMetrics';
 
 export default async function BillingPage(props: {
     searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -47,62 +48,17 @@ export default async function BillingPage(props: {
                 <p className="text-lg md:text-xl text-muted-foreground font-medium">Manage your plan and usage limits</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                {/* Plan Card */}
-                <div className="overflow-hidden relative group">
-                    <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    <div className="glass-darker p-8 md:p-10 rounded-[2rem] md:rounded-[2.5rem] border border-white/5 space-y-8 relative z-10">
-                        <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                            <div className="space-y-1">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Current Plan</p>
-                                <h2 className="text-3xl md:text-4xl font-black uppercase">{user.subscriptionPlan || 'Free'}</h2>
-                            </div>
-                            <div className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest ${isPaid ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
-                                }`}>
-                                {user.subscriptionStatus || 'Active'}
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <ManageSubscriptionButton />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Usage Card */}
-                <div className="glass-darker p-8 md:p-10 rounded-[2rem] md:rounded-[2.5rem] border border-white/5 space-y-8">
-                    <div className="space-y-1">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-purple-400">Usage Overview</p>
-                        <h2 className="text-3xl md:text-4xl font-black uppercase">Transcription</h2>
-                    </div>
-
-                    <div className="space-y-6">
-                        <div className="space-y-2">
-                            <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
-                                <span className="text-muted-foreground">Minutes Used</span>
-                                <span>{user.minutesUsed || 0} / {(user.minutesLimit || 0) + (user.addonMinutes || 0)}</span>
-                            </div>
-                            <div className="h-4 bg-white/5 rounded-full overflow-hidden border border-white/5 p-1">
-                                <div
-                                    className="h-full bg-indigo-500 transition-all duration-1000"
-                                    style={{ width: `${Math.min(100, ((user.minutesUsed || 0) / ((user.minutesLimit || 1) + (user.addonMinutes || 0))) * 100)}%` }}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Available</p>
-                                <p className="text-base md:text-lg font-black">{Math.max(0, ((user.minutesLimit || 0) + (user.addonMinutes || 0)) - (user.minutesUsed || 0))} min</p>
-                            </div>
-                            <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Add-ons</p>
-                                <p className="text-base md:text-lg font-black">{user.addonMinutes || 0} min</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <BillingUsageMetrics
+                initialData={{
+                    plan: user.subscriptionPlan || 'Free',
+                    subscriptionStatus: user.subscriptionStatus || 'inactive',
+                    minutesLimit: user.minutesLimit || 0,
+                    minutesUsed: user.minutesUsed || 0,
+                    addonMinutes: user.addonMinutes || 0,
+                    totalAvailable: (user.minutesLimit || 0) + (user.addonMinutes || 0) - (user.minutesUsed || 0),
+                    billingCycleEnd: user.billingCycleEnd?.toISOString() || null
+                }}
+            />
 
             {/* Invoices Placeholder / Info */}
             <div className="glass rounded-[2rem] md:rounded-[2.5rem] p-8 md:p-10 border border-white/5 flex flex-col items-center text-center space-y-6">

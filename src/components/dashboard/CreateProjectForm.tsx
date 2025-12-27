@@ -22,11 +22,44 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
     const [mode, setMode] = useState<InputMode>('url');
     const [error, setError] = useState<{ title: string, message: string } | null>(null);
     const [projectId, setProjectId] = useState<string | null>(null);
+    const [visualPercent, setVisualPercent] = useState(0);
     const [progress, setProgress] = useState<ProgressState>({
         percent: 0,
-        description: 'Waiting for signal...',
-        status: 'idle'
+        description: 'Synchronizing with Neural Grid...',
+        status: 'pending'
     });
+
+    // Neural Creep Logic: Never let the user see a frozen bar
+    useEffect(() => {
+        if (view !== 'processing' || progress.status === 'completed' || progress.status === 'failed') {
+            return;
+        }
+
+        const interval = setInterval(() => {
+            setVisualPercent(prev => {
+                const realProgress = progress.percent;
+                // If visual is way behind real progress, jump to catch up
+                if (realProgress > prev + 5) return prev + 2;
+
+                // Otherwise, creep slowly if we're under 99%
+                if (prev < 99) {
+                    // Slower creep as we get higher
+                    const increment = prev > 90 ? 0.05 : 0.2;
+                    return Math.min(99, prev + increment);
+                }
+                return prev;
+            });
+        }, 500);
+
+        return () => clearInterval(interval);
+    }, [view, progress.percent, progress.status]);
+
+    // Sync visualPercent with progress when progress jumps significantly
+    useEffect(() => {
+        if (progress.percent > visualPercent) {
+            setVisualPercent(progress.percent);
+        }
+    }, [progress.percent]);
 
     const startProcessing = async (input: string | File) => {
         setView('processing');
@@ -163,7 +196,7 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
             )}
 
             {view === 'processing' && (
-                <ProcessingView progress={progress} />
+                <ProcessingView progress={{ ...progress, percent: Math.round(visualPercent) }} />
             )}
 
             {view === 'error' && error && (

@@ -62,7 +62,7 @@ export default async function DashboardPage(props: { searchParams: Promise<any> 
             <BillingUsageMetrics
                 initialData={{
                     plan: user.subscriptionPlan || 'Free',
-                    status: user.subscriptionStatus || 'inactive',
+                    subscriptionStatus: user.subscriptionStatus || 'inactive',
                     minutesLimit: user.minutesLimit || 0,
                     minutesUsed: user.minutesUsed || 0,
                     addonMinutes: user.addonMinutes || 0,
@@ -90,16 +90,7 @@ export default async function DashboardPage(props: { searchParams: Promise<any> 
                 </div>
 
                 <div className="space-y-8 md:space-y-12">
-                    <div className="flex items-center gap-4 md:gap-6 px-4 md:px-10">
-                        <div className="w-2 md:w-3 h-8 md:h-10 bg-purple-600 rounded-full shadow-[0_0_15px_rgba(168,85,247,0.3)]" />
-                        <div className="space-y-1 md:space-y-2">
-                            <h2 className="text-lg md:text-xl font-bold uppercase tracking-wide text-foreground">Recent Projects</h2>
-                            <p className="text-[10px] md:text-xs font-medium text-muted-foreground tracking-widest uppercase">Workspace historical data</p>
-                        </div>
-                    </div>
-                    <Card variant="darker" className="p-6 md:p-12 min-h-[400px] border-border/50 shadow-2xl">
-                        <RecentProjects userId={user.id} />
-                    </Card>
+                    <RecentProjects userId={user.id} />
                 </div>
             </div>
         </div>

@@ -68,9 +68,9 @@ export async function POST(req: NextRequest) {
                     youtubeVideoId: videoId,
                     transcript: 'Initialising...',
                     language: 'Detecting...',
-                    status: 'processing',
-                    progress: 2,
-                    statusDescription: 'Validating Video Signal...'
+                    status: 'pending',
+                    progress: 0,
+                    statusDescription: 'Request Pending'
                 })
                 .returning();
 
@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
                 };
 
                 try {
+                    await updateProgress(5, 'Job Accepted', 'processing');
                     // 1. Fetch Metadata (Slow)
                     let durationSeconds = 0;
                     try {
@@ -164,16 +165,22 @@ export async function POST(req: NextRequest) {
                     // --- FALLBACK TO STT PIPELINE (SLOW PATH) ---
                     console.log(`[Background] [Project ${project.id}] No YouTube captions found or AI failed. Rolling out STT Pipeline...`);
                     await updateProgress(15, 'Starting deep audio analysis...');
-                    await updateProgress(22, 'Extracting audio layers...');
+                    await updateProgress(20, 'Extracting audio layers...', 'processing');
 
                     console.log(`[Background] [Project ${project.id}] Running STT Pipeline (Phase 1)...`);
-                    const phase1Result = await runSTTPipeline(videoId!, updateProgress, {
+                    const phase1Result = await runSTTPipeline(videoId!, async (p, d) => {
+                        // Map internal STT progress to our 20-80% range
+                        // 20% + (p * 0.3) -> ends at 50%
+                        const mappedProgress = Math.floor(20 + (p * 0.3));
+                        await updateProgress(mappedProgress, d, 'processing');
+                    }, {
                         durationSeconds: isLongVideo ? PHASE1_DURATION : undefined,
                         descriptionPrefix: isLongVideo ? '[Phase 1] ' : ''
                     });
                     console.log(`[Background] [Project ${project.id}] Phase 1 complete. Found ${phase1Result.timestamps.length} timestamps.`);
 
-                    await updateProgress(75, 'Structuring timestamps with AI...');
+                    await updateProgress(50, 'Speech processing segment 1 complete...', 'processing');
+                    await updateProgress(80, 'Structuring timestamps with AI...', 'processing');
 
                     if (phase1Result.timestamps && phase1Result.timestamps.length > 0) {
                         const timestampRecords = phase1Result.timestamps.map((ts: { time: string; title: string }, index: number) => ({
@@ -249,7 +256,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({
                 success: true,
                 projectId: project.id,
-                status: 'processing'
+                status: 'pending'
             });
         }
         // Process uploaded transcript
@@ -266,9 +273,9 @@ export async function POST(req: NextRequest) {
                     title,
                     transcript: 'Extracting content...',
                     language: 'Detecting...',
-                    status: 'processing',
-                    progress: 10,
-                    statusDescription: 'Reading file...'
+                    status: 'pending',
+                    progress: 0,
+                    statusDescription: 'Request Pending'
                 })
                 .returning();
 
@@ -276,16 +283,18 @@ export async function POST(req: NextRequest) {
             setTimeout(async () => {
                 console.log(`[Background] Starting file synthesis for project ${project.id}`);
                 try {
-                    const updateProgress = async (progress: number, description: string) => {
+                    const updateProgress = async (progress: number, description: string, status: string = 'processing') => {
                         console.log(`[Background] Transcript project ${project.id} progress: ${progress}% - ${description}`);
                         try {
                             await db.update(projects)
-                                .set({ progress, statusDescription: description, updatedAt: new Date() })
+                                .set({ progress, statusDescription: description, status, updatedAt: new Date() })
                                 .where(eq(projects.id, project.id));
                         } catch (e) {
                             console.error(`[Background] File progress update error for ${project.id}:`, e);
                         }
                     };
+
+                    await updateProgress(5, 'Job Accepted', 'processing');
 
                     await updateProgress(20, 'Analyzing structure...');
                     const segments = parseTranscriptFile(content, filename);
@@ -346,7 +355,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({
                 success: true,
                 projectId: project.id,
-                status: 'processing'
+                status: 'pending'
             });
         }
         else {

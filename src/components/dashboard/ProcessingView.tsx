@@ -12,10 +12,11 @@ interface ProcessingViewProps {
 }
 
 const STEPS = [
-    { label: 'Link', min: 10 },
-    { label: 'Audio', min: 40 },
-    { label: 'Video', min: 80 },
-    { label: 'Done', min: 100 }
+    { label: 'Accepted', min: 5 },
+    { label: 'Audio', min: 20 },
+    { label: 'Speech', min: 50 },
+    { label: 'Map', min: 80 },
+    { label: 'Ready', min: 100 }
 ];
 
 export function ProcessingView({ progress }: ProcessingViewProps) {
@@ -58,10 +59,10 @@ export function ProcessingView({ progress }: ProcessingViewProps) {
             </div>
 
             {/* Step Indicators */}
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-5 gap-4">
                 {STEPS.map((step, i) => {
                     const isDone = progress.percent > step.min || progress.status === 'completed';
-                    const isActive = progress.percent >= step.min && progress.percent < (i < 3 ? STEPS[i + 1].min : 101);
+                    const isActive = progress.percent >= step.min && progress.percent < (i < 4 ? STEPS[i + 1].min : 101);
 
                     return (
                         <div key={step.label} className="flex flex-col items-center gap-4 group">

@@ -84,7 +84,7 @@ async function getNonSilentIntervals(filePath: string): Promise<{ start: number,
 async function splitAudio(filePath: string): Promise<string[]> {
     return new Promise((resolve, reject) => {
         const chunks: string[] = [];
-        const outputPattern = path.join(tmpdir(), `chunk-${uuidv4()}-%03d.wav`);
+        const outputPattern = path.join('/tmp', `chunk-${uuidv4()}-%03d.wav`);
 
         ffmpeg(filePath)
             .outputOptions([
@@ -96,7 +96,7 @@ async function splitAudio(filePath: string): Promise<string[]> {
             .on('error', (err) => reject(err))
             .on('end', () => {
                 // Find all generated files
-                const dir = tmpdir();
+                const dir = '/tmp';
                 const files = fs.readdirSync(dir)
                     .filter(f => f.startsWith(path.basename(outputPattern).split('%')[0]) && f.endsWith('.wav'))
                     .map(f => path.join(dir, f))

@@ -9,7 +9,7 @@ import Link from 'next/link';
 
 interface BillingStatus {
     plan: string;
-    status: string;
+    subscriptionStatus: string;
     minutesLimit: number;
     minutesUsed: number;
     addonMinutes: number;
@@ -20,6 +20,7 @@ interface BillingStatus {
 export default function BillingUsageMetrics({ initialData }: { initialData: BillingStatus }) {
     const [data, setData] = useState<BillingStatus>(initialData);
     const [loading, setLoading] = useState(false);
+    const [showSuccess, setShowSuccess] = useState(false);
 
     const refreshStatus = useCallback(async () => {
         setLoading(true);
@@ -36,7 +37,7 @@ export default function BillingUsageMetrics({ initialData }: { initialData: Bill
         }
     }, []);
 
-    // Initial refresh on mount to ensure freshness
+    // Initial refresh on mount to ensure freshness (anti-caching measure)
     useEffect(() => {
         refreshStatus();
     }, [refreshStatus]);
@@ -52,28 +53,39 @@ export default function BillingUsageMetrics({ initialData }: { initialData: Bill
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         if (params.get('payment') === 'success') {
+            setShowSuccess(true);
             // Initial burst of refreshes to catch LS update
-            const intervals = [1000, 3000, 7000, 15000];
+            const intervals = [500, 2000, 5000, 10000];
             intervals.forEach(delay => {
                 setTimeout(refreshStatus, delay);
             });
+            // Hide message after some time
+            setTimeout(() => setShowSuccess(false), 8000);
         }
     }, [refreshStatus]);
 
-    const isPaidUser = data.status === 'active' || data.status === 'trialing';
+    const isPaidUser = data.subscriptionStatus === 'active' || data.subscriptionStatus === 'trialing';
     const totalMinutes = data.minutesLimit + data.addonMinutes;
     const minutesRemaining = data.totalAvailable;
 
     return (
         <div className="space-y-12">
-            {/* Syncing Indicator Overlay (Subtle) */}
-            {loading && (
-                <div className="fixed top-4 right-4 z-50">
-                    <div className="bg-indigo-600 text-white text-[10px] font-bold px-4 py-2 rounded-full shadow-lg animate-pulse">
-                        SYNCING USAGE...
+            {/* Payment Success Notification */}
+            {showSuccess && (
+                <div className="animate-in slide-in-from-top-10 duration-700">
+                    <div className="bg-green-500/10 border border-green-500/20 rounded-[2rem] p-6 md:p-8 flex items-center gap-6 md:gap-8 backdrop-blur-xl shadow-2xl">
+                        <div className="w-12 h-12 md:w-16 md:h-16 bg-green-500 rounded-full flex items-center justify-center text-white text-2xl animate-bounce shadow-[0_0_30px_rgba(34,197,94,0.5)]">
+                            ✓
+                        </div>
+                        <div className="space-y-1">
+                            <h4 className="text-xl md:text-2xl font-black uppercase text-foreground">Payment Successful</h4>
+                            <p className="text-xs md:text-sm text-muted-foreground font-medium tracking-wide">Your plan and usage limits have been updated. Welcome to the creator tier.</p>
+                        </div>
                     </div>
                 </div>
             )}
+
+            {/* Syncing Indicator Overlay (Subtle) */}
 
             {/* Account Status Badge (Floating in parent usually, but we'll provide it here or handle separately) */}
             <div className="flex justify-end -mb-8">

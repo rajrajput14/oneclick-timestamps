@@ -17,6 +17,8 @@ export default function PaymentRefresh() {
         const triggerSync = async () => {
             try {
                 await fetch('/api/subscription/sync', { method: 'POST' });
+                // Trigger immediate UI refresh for any listening client components
+                window.dispatchEvent(new CustomEvent('billing-update'));
                 router.refresh();
             } catch (e) {
                 console.error('Auto-sync failed:', e);
