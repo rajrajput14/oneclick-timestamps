@@ -38,32 +38,40 @@ export async function activateSubscription(
             updatedAt: new Date(),
         };
 
-        // If plan details provided, use them
+        // Check if this is a brand new subscription record for our DB
+        const existing = await tx.query.subscriptions.findFirst({
+            where: eq(subscriptions.lemonSqueezyId, lemonSqueezyId),
+        });
+
+        // 🚀 ADDITIVE LOGIC (Summing up plan minutes)
         if (planName) updateData.subscriptionPlan = planName;
-        if (minutesLimit !== undefined) updateData.minutesLimit = minutesLimit;
+
+        if (minutesLimit !== undefined) {
+            if (!existing) {
+                // If it's a NEW subscription, we add its minutes to the existing limit
+                console.log(`🔋 [DB] Adding ${minutesLimit} new plan minutes to user ${userId}`);
+                updateData.minutesLimit = sql`${users.minutesLimit} + ${minutesLimit}`;
+            } else {
+                // If it's an update to an EXISTING subscription, we only set the limit 
+                // to exactly what LemonSqueezy says (prevents infinite stacking on retries)
+                updateData.minutesLimit = minutesLimit;
+            }
+        }
 
         const isPreviouslyActive = user?.subscriptionStatus === 'active';
         if (!isPreviouslyActive) {
             updateData.minutesUsed = 0;
-            // Default to 500 if NO limit provided and NO previous limit
-            if (updateData.minutesLimit === undefined) {
+            // Defaulting if nothing exists
+            if (updateData.minutesLimit === undefined && (!user?.minutesLimit || user.minutesLimit < 500)) {
                 updateData.minutesLimit = 500;
             }
         }
 
-        console.log(`[DB] Updating User ${userId} with:`, JSON.stringify(updateData));
+        console.log(`[DB] Syncing User ${userId} (Existing Sub: ${!!existing})`);
 
-        const result = await tx
-            .update(users)
-            .set(updateData)
-            .where(eq(users.id, userId));
+        await tx.update(users).set(updateData).where(eq(users.id, userId));
 
-        console.log(`✅ [DB] Update complete for ${userId}. (Previously Active: ${isPreviouslyActive})`);
-
-        // Create or update subscription record
-        const existing = await tx.query.subscriptions.findFirst({
-            where: eq(subscriptions.lemonSqueezyId, lemonSqueezyId),
-        });
+        console.log(`✅ [DB] Plan Activation complete for ${userId}. (Total Aggregated Plan: ${planName})`);
 
         if (existing) {
             await tx
@@ -207,7 +215,8 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
 
     try {
         // --- 1. SYNC SUBSCRIPTIONS ---
-        const subUrl = `https://api.lemonsqueezy.com/v1/subscriptions?filter[user_email]=${encodeURIComponent(email)}`;
+        // Added sort=-created_at to ensure the NEWEST plan is processed first
+        const subUrl = `https://api.lemonsqueezy.com/v1/subscriptions?filter[user_email]=${encodeURIComponent(email)}&sort=-created_at`;
         console.log(`🔍 [Sync] Calling Subscriptions API: ${subUrl}`);
         const subRes = await fetch(subUrl, {
             headers: {
