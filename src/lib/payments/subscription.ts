@@ -196,84 +196,91 @@ export async function getSubscriptionStatus(userId: string): Promise<{
  * Used as a fallback for when webhooks are unreliable
  */
 export async function syncSubscriptionWithLemonSqueezy(userId: string, email: string): Promise<boolean> {
-    console.log('🔄 Manual Sync Start for:', email);
+    console.log(`🔄 [Sync] Starting manual recovery for: ${email} (User ID: ${userId})`);
 
     const apiKey = process.env.LEMONSQUEEZY_API_KEY;
     if (!apiKey) {
-        console.error('❌ SYNC_ERROR: LEMONSQUEEZY_API_KEY missing');
+        console.error('❌ [Sync] FAILED: LEMONSQUEEZY_API_KEY missing');
         return false;
     }
 
     try {
-        // Fetch subscriptions for this email from LemonSqueezy
-        const url = `https://api.lemonsqueezy.com/v1/subscriptions?filter[user_email]=${encodeURIComponent(email)}`;
-        console.log(`[Sync] Calling LS API: ${url}`);
-
-        const response = await fetch(url, {
+        // --- 1. SYNC SUBSCRIPTIONS ---
+        const subUrl = `https://api.lemonsqueezy.com/v1/subscriptions?filter[user_email]=${encodeURIComponent(email)}`;
+        const subRes = await fetch(subUrl, {
             headers: {
                 'Accept': 'application/vnd.api+json',
-                'Content-Type': 'application/vnd.api+json',
                 'Authorization': `Bearer ${apiKey}`
             }
-        }
-        );
+        });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('[Sync] API Error response:', errorText);
-            return false;
-        }
+        if (subRes.ok) {
+            const data = await subRes.json();
+            const subs = data.data || [];
+            console.log(`🔍 [Sync] Found ${subs.length} candidates in LS Subscriptions API.`);
 
-        const data = await response.json();
-        const subscriptionsList = data.data || [];
-        console.log(`[Sync] Found ${subscriptionsList.length} total subscriptions for user.`);
-
-        // Look for any active, trialing, on_trial, or even past_due (to be safe)
-        const validStatuses = ['active', 'on_trial', 'trialing', 'past_due'];
-        const activeSub = subscriptionsList.find((s: any) =>
-            validStatuses.includes(String(s.attributes.status).toLowerCase())
-        );
-
-        if (activeSub) {
-            console.log('✅ Found valid subscription:', activeSub.id, 'Status:', activeSub.attributes.status);
-            const attrs = activeSub.attributes;
-
-            // Extract plan details from metadata if available (LS returns this in meta)
-            // or we can infer it from the variant_id
-            const metadata = activeSub.meta?.custom_data || activeSub.meta?.metadata || attrs.metadata || {};
-
-            let minutesLimit = metadata.minutes_limit ? parseInt(metadata.minutes_limit) : 500;
-            let planName = metadata.plan_name || 'Creator';
-
-            // Fallback: Infer from variant_id if we have known IDs or use price as proxy
-            // In a real app, you'd map these to your specific variant IDs
-            const variantId = String(attrs.variant_id);
-            console.log(`[Sync] Variant ID: ${variantId}, Meta Plan: ${planName}, Meta Limit: ${minutesLimit}`);
-
-            // Pro Creator usually has higher limits
-            if (!metadata.plan_name && (variantId === '56789' || minutesLimit > 500)) {
-                planName = 'Pro Creator';
-                if (!metadata.minutes_limit) minutesLimit = 1000;
-            }
-
-            await activateSubscription(
-                userId,
-                activeSub.id,
-                String(attrs.product_id),
-                variantId,
-                new Date(attrs.renews_at || attrs.ends_at || Date.now() + 30 * 24 * 60 * 60 * 1000),
-                planName,
-                minutesLimit,
-                String(attrs.status).toLowerCase()
+            const validStatuses = ['active', 'on_trial', 'trialing', 'past_due'];
+            const activeSub = subs.find((s: any) =>
+                validStatuses.includes(String(s.attributes.status).toLowerCase())
             );
 
-            return true;
+            if (activeSub) {
+                const attrs = activeSub.attributes;
+                const metadata = activeSub.meta?.custom_data || attrs.custom_data || {};
+
+                let minutesLimit = metadata.minutes_limit ? parseInt(metadata.minutes_limit) : 500;
+                let planName = metadata.plan_name || (minutesLimit > 500 ? 'Pro Creator' : 'Creator');
+
+                await activateSubscription(
+                    userId,
+                    String(activeSub.id),
+                    String(attrs.product_id),
+                    String(attrs.variant_id),
+                    new Date(attrs.renews_at || attrs.ends_at || Date.now() + 30 * 24 * 60 * 60 * 1000),
+                    planName,
+                    minutesLimit,
+                    String(attrs.status).toLowerCase()
+                );
+                console.log(`✅ [Sync] Successfully recovered subscription: ${activeSub.id}`);
+                return true;
+            }
         }
 
-        console.log('ℹ️ Sync completed: No active subscriptions found in LS API data.');
+        // --- 2. SYNC ORDERS (For Add-ons) ---
+        console.log('🔍 [Sync] No active subscriptions found. Checking Orders for add-ons...');
+        const orderUrl = `https://api.lemonsqueezy.com/v1/orders?filter[user_email]=${encodeURIComponent(email)}`;
+        const orderRes = await fetch(orderUrl, {
+            headers: {
+                'Accept': 'application/vnd.api+json',
+                'Authorization': `Bearer ${apiKey}`
+            }
+        });
+
+        if (orderRes.ok) {
+            const data = await orderRes.json();
+            const orders = data.data || [];
+            console.log(`🔍 [Sync] Found ${orders.length} orders in LS Orders API.`);
+
+            // Look for recent success orders that are add-ons
+            for (const order of orders) {
+                const attrs = order.attributes;
+                if (attrs.status === 'paid') {
+                    const customData = order.meta?.custom_data || attrs.custom_data || {};
+                    if (customData.type === 'addon' && customData.minutes) {
+                        const minutesToAdd = parseInt(String(customData.minutes));
+                        console.log(`🔋 [Sync] Found paid add-on order ${order.id}. Adding ${minutesToAdd} minutes.`);
+                        await purchaseAddon(userId, minutesToAdd);
+                        // In theory we could continue for multiple orders, but we'll return true if we found at least one
+                        return true;
+                    }
+                }
+            }
+        }
+
+        console.log('ℹ️ [Sync] Finished: No actionable subscriptions or orders found for this email.');
         return false;
     } catch (error) {
-        console.error('❌ Sync Critical Error:', error);
+        console.error('❌ [Sync] Critical Error during recovery:', error);
         return false;
     }
 }
