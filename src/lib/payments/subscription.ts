@@ -11,15 +11,23 @@ type DBOrTransaction = {
 };
 
 // Hardcoded mapping for when metadata is missing from LS API
+// Note: 1171254 is confirmed as "Pro Creator" from RAW API logs
 const VARIANT_MAP: Record<string, { plan: string, minutes: number }> = {
-    "1171254": { plan: "Creator", minutes: 500 },
-    "1171255": { plan: "Pro Creator", minutes: 1500 }, // Assuming sequential
+    "1171254": { plan: "Pro Creator", minutes: 1500 },
+    "1171253": { plan: "Creator", minutes: 500 }, // Assuming previous ID
 };
 
-function getPlanConfig(variantId: string, metadata: any = {}) {
+function getPlanConfig(variantId: string, metadata: any = {}, productName?: string) {
     const config = VARIANT_MAP[variantId];
+
+    // Priority: Metadata > Hardcoded Map > Product Name from API > Default
+    let planName = metadata.plan_name || config?.plan || productName || 'Creator';
+
+    // Normalize "Pro creator" to "Pro Creator"
+    if (planName.toLowerCase() === 'pro creator') planName = 'Pro Creator';
+
     return {
-        planName: metadata.plan_name || config?.plan || 'Creator',
+        planName,
         minutesLimit: metadata.minutes_limit ? parseInt(metadata.minutes_limit) : (config?.minutes || 500)
     };
 }
@@ -71,6 +79,10 @@ export async function activateSubscription(
                 // This prevents double-counting on repeat syncs of the same state.
                 console.log(`🔋 [DB] Adding ${finalMinutesLimit} plan minutes to user ${userId} (New/Upgrade)`);
                 updateData.minutesLimit = sql`COALESCE(${users.minutesLimit}, 0) + ${finalMinutesLimit}`;
+            } else if (user && (user.minutesLimit || 0) < finalMinutesLimit) {
+                // SELF-HEALING: If we previously misidentified this variant as a lower tier
+                console.log(`🩹 [DB] Self-healing minutes limit for ${userId} to ${finalMinutesLimit}`);
+                updateData.minutesLimit = finalMinutesLimit;
             }
             // NOTE: If variant matches, we DON'T update minutesLimit at all, 
             // keeping the user's current (potentially aggregated) balance.
@@ -277,7 +289,7 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
                 // If ID exists and is active, sync it!
                 if (['active', 'on_trial', 'trialing', 'past_due'].includes(String(attrs.status).toLowerCase())) {
                     const metadata = sub.meta?.custom_data || attrs.custom_data || {};
-                    const { planName, minutesLimit } = getPlanConfig(String(attrs.variant_id), metadata);
+                    const { planName, minutesLimit } = getPlanConfig(String(attrs.variant_id), metadata, attrs.product_name);
 
                     await activateSubscription(
                         userId, String(sub.id), String(attrs.product_id), String(attrs.variant_id),
@@ -295,7 +307,7 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
         console.log(`🔍 [Sync] Scanning emails: ${searchEmails.join(', ')}`);
 
         for (const searchEmail of searchEmails) {
-            const subUrl = `https://api.lemonsqueezy.com/v1/subscriptions?filter[user_email]=${encodeURIComponent(searchEmail)}&sort=created_at`;
+            const subUrl = `https://api.lemonsqueezy.com/v1/subscriptions?filter[user_email]=${encodeURIComponent(searchEmail)}`;
             console.log(`🔍 [Sync] Calling Subscriptions API for: ${searchEmail}`);
             const subRes = await fetch(subUrl, {
                 headers: { 'Accept': 'application/vnd.api+json', 'Authorization': `Bearer ${apiKey}` }
@@ -320,7 +332,7 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
 
                         // Sync if it's a NEW subscription OR an Upgrade within the same ID
                         if (!existingSub || isUpgrade) {
-                            const { planName, minutesLimit } = getPlanConfig(String(attrs.variant_id), metadata);
+                            const { planName, minutesLimit } = getPlanConfig(String(attrs.variant_id), metadata, attrs.product_name);
 
                             console.log(`🔋 [Sync] Aggregating ${planName} (ID: ${sub.id}, Upgrade: ${!!isUpgrade})`);
                             await activateSubscription(
@@ -341,7 +353,7 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
 
         // --- 4. SYNC ALL PAID ORDERS (For Add-ons) ---
         for (const searchEmail of searchEmails) {
-            const orderUrl = `https://api.lemonsqueezy.com/v1/orders?filter[email]=${encodeURIComponent(searchEmail)}&sort=created_at`;
+            const orderUrl = `https://api.lemonsqueezy.com/v1/orders?filter[email]=${encodeURIComponent(searchEmail)}`;
             console.log(`🔍 [Sync] Checking ALL orders for: ${searchEmail}`);
             const orderRes = await fetch(orderUrl, {
                 headers: { 'Accept': 'application/vnd.api+json', 'Authorization': `Bearer ${apiKey}` }
