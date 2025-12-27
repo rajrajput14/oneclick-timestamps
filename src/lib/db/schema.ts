@@ -1,4 +1,4 @@
-import { pgTable, text, integer, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, timestamp, index, serial } from 'drizzle-orm/pg-core';
 import { createId } from '@paralleldrive/cuid2';
 import { relations } from 'drizzle-orm';
 
@@ -88,6 +88,16 @@ export const subscriptions = pgTable('subscriptions', {
     updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({
     userIdIdx: index('subscription_user_id_idx').on(table.userId),
+}));
+
+// Webhook Idempotency Table (Critical for Production)
+export const webhookEvents = pgTable('webhook_events', {
+    id: serial('id').primaryKey(),
+    eventId: text('event_id').unique().notNull(),
+    eventName: text('event_name'),
+    processedAt: timestamp('processed_at').defaultNow(),
+}, (table) => ({
+    webhookEventsIdIdx: index('webhook_events_id_idx').on(table.eventId),
 }));
 
 // Type exports

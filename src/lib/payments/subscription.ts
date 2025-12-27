@@ -1,6 +1,14 @@
 import { db } from '@/lib/db';
 import { users, subscriptions } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { type PgTransaction } from 'drizzle-orm/pg-core';
+
+// We define a type that can be either the DB or a transaction to allow injection
+type DBOrTransaction = {
+    update: typeof db.update;
+    insert: typeof db.insert;
+    query: typeof db.query;
+};
 
 /**
  * Activate subscription (called from webhook or manual sync)
@@ -13,7 +21,8 @@ export async function activateSubscription(
     currentPeriodEnd: Date,
     planName?: string,
     minutesLimit?: number,
-    status: string = 'active'
+    status: string = 'active',
+    tx: DBOrTransaction = db
 ): Promise<void> {
     console.log('🔄 Activating subscription for user:', userId, 'Plan:', planName);
 
@@ -43,7 +52,7 @@ export async function activateSubscription(
             }
         }
 
-        await db
+        await tx
             .update(users)
             .set(updateData)
             .where(eq(users.id, userId));
@@ -51,12 +60,12 @@ export async function activateSubscription(
         console.log(`✅ User ${userId} updated to active subscription ${lemonSqueezyId}`);
 
         // Create or update subscription record
-        const existing = await db.query.subscriptions.findFirst({
+        const existing = await tx.query.subscriptions.findFirst({
             where: eq(subscriptions.lemonSqueezyId, lemonSqueezyId),
         });
 
         if (existing) {
-            await db
+            await tx
                 .update(subscriptions)
                 .set({
                     status: 'active',
@@ -66,7 +75,7 @@ export async function activateSubscription(
                 .where(eq(subscriptions.id, existing.id));
             console.log('✅ Subscription record updated');
         } else {
-            await db.insert(subscriptions).values({
+            await tx.insert(subscriptions).values({
                 userId,
                 lemonSqueezyId,
                 status: 'active',
@@ -85,11 +94,14 @@ export async function activateSubscription(
 /**
  * Deactivate subscription (called from webhook on cancellation)
  */
-export async function deactivateSubscription(lemonSqueezyId: string): Promise<void> {
+export async function deactivateSubscription(
+    lemonSqueezyId: string,
+    tx: DBOrTransaction = db
+): Promise<void> {
     console.log('🔄 Deactivating subscription:', lemonSqueezyId);
 
     try {
-        const subscription = await db.query.subscriptions.findFirst({
+        const subscription = await tx.query.subscriptions.findFirst({
             where: eq(subscriptions.lemonSqueezyId, lemonSqueezyId),
         });
 
@@ -99,7 +111,7 @@ export async function deactivateSubscription(lemonSqueezyId: string): Promise<vo
         }
 
         // Update subscription status in history
-        await db
+        await tx
             .update(subscriptions)
             .set({
                 status: 'cancelled',
@@ -108,7 +120,7 @@ export async function deactivateSubscription(lemonSqueezyId: string): Promise<vo
             .where(eq(subscriptions.id, subscription.id));
 
         // Downgrade user to free plan
-        await db
+        await tx
             .update(users)
             .set({
                 subscriptionPlan: 'Free',
@@ -122,6 +134,33 @@ export async function deactivateSubscription(lemonSqueezyId: string): Promise<vo
         console.log(`✅ User ${subscription.userId} downgraded to Free plan`);
     } catch (error) {
         console.error('❌ Error deactivating subscription:', error);
+        throw error;
+    }
+}
+
+/**
+ * Handle Add-on purchase with atomic increments (Concurrency Safe)
+ */
+export async function purchaseAddon(
+    userId: string,
+    minutesToAdd: number,
+    tx: DBOrTransaction = db
+): Promise<void> {
+    console.log(`🔋 Processing add-on: Adding ${minutesToAdd} minutes to user ${userId}`);
+
+    try {
+        // Atomic SQL increment to prevent race conditions
+        await tx
+            .update(users)
+            .set({
+                addonMinutes: sql`${users.addonMinutes} + ${minutesToAdd}`,
+                updatedAt: new Date(),
+            })
+            .where(eq(users.id, userId));
+
+        console.log(`✅ Atomic increment successful for user ${userId}`);
+    } catch (error) {
+        console.error('❌ Error processing add-on purchase:', error);
         throw error;
     }
 }
