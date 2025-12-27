@@ -65,3 +65,4 @@ node_modules
 tmp
 temp
 uploads
+*-player-script.js
