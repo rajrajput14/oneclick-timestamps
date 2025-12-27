@@ -100,6 +100,20 @@ export const webhookEvents = pgTable('webhook_events', {
     webhookEventsIdIdx: index('webhook_events_id_idx').on(table.eventId),
 }));
 
+// Orders table (for one-time add-ons)
+export const orders = pgTable('orders', {
+    id: text('id').primaryKey().$defaultFn(() => createId()),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    lemonSqueezyId: text('lemon_squeezy_id').notNull().unique(),
+    status: text('status').notNull(),
+    minutes: integer('minutes').default(0),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    userIdIdx: index('order_user_id_idx').on(table.userId),
+    lsIdIdx: index('order_ls_id_idx').on(table.lemonSqueezyId),
+}));
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
@@ -109,3 +123,5 @@ export type Timestamp = typeof timestamps.$inferSelect;
 export type InsertTimestamp = typeof timestamps.$inferInsert;
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = typeof subscriptions.$inferInsert;
+export type Order = typeof orders.$inferSelect;
+export type InsertOrder = typeof orders.$inferInsert;

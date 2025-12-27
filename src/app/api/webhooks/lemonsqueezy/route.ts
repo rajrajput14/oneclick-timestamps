@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
                 if (isAddon && minutesValue) {
                     const minutesToAdd = parseInt(String(minutesValue));
                     console.log(`[Webhook] CALLING purchaseAddon (User: ${userId}, Minutes: ${minutesToAdd})`);
-                    await purchaseAddon(userId, minutesToAdd, tx);
+                    await purchaseAddon(userId, minutesToAdd, String(body.id), tx);
                 }
             }
 

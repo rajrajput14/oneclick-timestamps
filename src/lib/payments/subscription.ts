@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { users, subscriptions } from '@/lib/db/schema';
+import { users, subscriptions, orders } from '@/lib/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { type PgTransaction } from 'drizzle-orm/pg-core';
 
@@ -50,14 +50,13 @@ export async function activateSubscription(
             const isVariantChange = existing && String(existing.variantId) !== String(variantId);
 
             if (!existing || isVariantChange) {
-                // If it's a NEW subscription OR a Tier Upgrade (Variant Change)
-                // We ADD its minutes to the existing limit
+                // Only ADD if it's a new item or an upgrade. 
+                // This prevents double-counting on repeat syncs of the same state.
                 console.log(`🔋 [DB] Adding ${minutesLimit} plan minutes to user ${userId} (New/Upgrade)`);
-                updateData.minutesLimit = sql`${users.minutesLimit} + ${minutesLimit}`;
-            } else {
-                // If it's just a regular renewal update, we maintain the newest limit
-                updateData.minutesLimit = minutesLimit;
+                updateData.minutesLimit = sql`COALESCE(${users.minutesLimit}, 0) + ${minutesLimit}`;
             }
+            // NOTE: If variant matches, we DON'T update minutesLimit at all, 
+            // keeping the user's current (potentially aggregated) balance.
         }
 
         const isPreviouslyActive = user?.subscriptionStatus === 'active';
@@ -80,11 +79,13 @@ export async function activateSubscription(
                 .update(subscriptions)
                 .set({
                     status: 'active',
+                    productId,
+                    variantId,
                     currentPeriodEnd,
                     updatedAt: new Date(),
                 })
                 .where(eq(subscriptions.id, existing.id));
-            console.log('✅ Subscription record updated');
+            console.log(`✅ Subscription record updated (Variant: ${variantId})`);
         } else {
             await tx.insert(subscriptions).values({
                 userId,
@@ -150,26 +151,45 @@ export async function deactivateSubscription(
 }
 
 /**
- * Handle Add-on purchase with atomic increments (Concurrency Safe)
+ * Handle Add-on purchase with atomic increments (Concurrency Safe & Idempotent)
  */
 export async function purchaseAddon(
     userId: string,
     minutesToAdd: number,
+    lsOrderId: string,
     tx: DBOrTransaction = db
 ): Promise<void> {
-    console.log(`🔋 Processing add-on: Adding ${minutesToAdd} minutes to user ${userId}`);
+    console.log(`🔋 Processing add-on: Adding ${minutesToAdd} minutes to user ${userId} (Order: ${lsOrderId})`);
 
     try {
+        // Check for idempotency using the orders table
+        const existingOrder = await tx.query.orders.findFirst({
+            where: eq(orders.lemonSqueezyId, lsOrderId),
+        });
+
+        if (existingOrder) {
+            console.log(`⚠️ Order ${lsOrderId} already processed. Skipping minute addition.`);
+            return;
+        }
+
         // Atomic SQL increment to prevent race conditions
         await tx
             .update(users)
             .set({
-                addonMinutes: sql`${users.addonMinutes} + ${minutesToAdd}`,
+                addonMinutes: sql`COALESCE(${users.addonMinutes}, 0) + ${minutesToAdd}`,
                 updatedAt: new Date(),
             })
             .where(eq(users.id, userId));
 
-        console.log(`✅ Atomic increment successful for user ${userId}`);
+        // Record the order to prevent double-counting
+        await tx.insert(orders).values({
+            userId,
+            lemonSqueezyId: lsOrderId,
+            status: 'paid',
+            minutes: minutesToAdd,
+        });
+
+        console.log(`✅ Atomic increment successful for user ${userId}. Order ${lsOrderId} recorded.`);
     } catch (error) {
         console.error('❌ Error processing add-on purchase:', error);
         throw error;
@@ -216,15 +236,49 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
     }
 
     try {
-        // --- 1. SYNC SUBSCRIPTIONS ---
-        // Added sort=-created_at to ensure the NEWEST plan is processed first
-        const subUrl = `https://api.lemonsqueezy.com/v1/subscriptions?filter[user_email]=${encodeURIComponent(email)}&sort=-created_at`;
-        console.log(`🔍 [Sync] Calling Subscriptions API: ${subUrl}`);
-        const subRes = await fetch(subUrl, {
-            headers: {
-                'Accept': 'application/vnd.api+json',
-                'Authorization': `Bearer ${apiKey}`
+        let itemsSynced = 0;
+
+        // --- 1. GET USER CURRENT ID ---
+        const user = await db.query.users.findFirst({
+            where: eq(users.id, userId),
+        });
+
+        // --- 2. TRY SYNC BY DIRECT ID (MOST RELIABLE) ---
+        if (user?.subscriptionId) {
+            console.log(`🔍 [Sync] Attempting direct sync by ID: ${user.subscriptionId}`);
+            const directUrl = `https://api.lemonsqueezy.com/v1/subscriptions/${user.subscriptionId}`;
+            const directRes = await fetch(directUrl, {
+                headers: { 'Accept': 'application/vnd.api+json', 'Authorization': `Bearer ${apiKey}` }
+            });
+
+            if (directRes.ok) {
+                const subData = await directRes.json();
+                const sub = subData.data;
+                const attrs = sub.attributes;
+
+                // If ID exists and is active, sync it!
+                if (['active', 'on_trial', 'trialing', 'past_due'].includes(String(attrs.status).toLowerCase())) {
+                    const metadata = sub.meta?.custom_data || attrs.custom_data || {};
+                    let minutesLimit = metadata.minutes_limit ? parseInt(metadata.minutes_limit) : 500;
+                    let planName = metadata.plan_name || (minutesLimit > 500 ? 'Pro Creator' : 'Creator');
+
+                    await activateSubscription(
+                        userId, String(sub.id), String(attrs.product_id), String(attrs.variant_id),
+                        new Date(attrs.renews_at || attrs.ends_at || Date.now() + 30 * 24 * 60 * 60 * 1000),
+                        planName, minutesLimit, String(attrs.status).toLowerCase()
+                    );
+                    console.log(`✅ [Sync] Direct ID sync successful: ${sub.id}`);
+                    itemsSynced++;
+                }
             }
+        }
+
+        // --- 3. SYNC ALL ACTIVE SUBSCRIPTIONS BY EMAIL (AGGREGATION) ---
+        // Changed to ascending sort (created_at) so that the NEWEST plan name is the final one in the DB
+        const subUrl = `https://api.lemonsqueezy.com/v1/subscriptions?filter[user_email]=${encodeURIComponent(email)}&sort=created_at`;
+        console.log(`🔍 [Sync] Checking ALL subscriptions: ${subUrl}`);
+        const subRes = await fetch(subUrl, {
+            headers: { 'Accept': 'application/vnd.api+json', 'Authorization': `Bearer ${apiKey}` }
         });
 
         if (subRes.ok) {
@@ -233,41 +287,33 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
             console.log(`🔍 [Sync] Found ${subs.length} candidates in LS Subscriptions API.`);
 
             const validStatuses = ['active', 'on_trial', 'trialing', 'past_due'];
-            const activeSub = subs.find((s: any) =>
-                validStatuses.includes(String(s.attributes.status).toLowerCase())
-            );
+            for (const sub of subs) {
+                const attrs = sub.attributes;
+                if (validStatuses.includes(String(attrs.status).toLowerCase())) {
+                    // Only sync if it's NOT the one we just synced by direct ID
+                    if (sub.id !== user?.subscriptionId) {
+                        const metadata = sub.meta?.custom_data || attrs.custom_data || {};
+                        let minutesLimit = metadata.minutes_limit ? parseInt(metadata.minutes_limit) : 500;
+                        let planName = metadata.plan_name || (minutesLimit > 500 ? 'Pro Creator' : 'Creator');
 
-            if (activeSub) {
-                const attrs = activeSub.attributes;
-                const metadata = activeSub.meta?.custom_data || attrs.custom_data || {};
-
-                let minutesLimit = metadata.minutes_limit ? parseInt(metadata.minutes_limit) : 500;
-                let planName = metadata.plan_name || (minutesLimit > 500 ? 'Pro Creator' : 'Creator');
-
-                await activateSubscription(
-                    userId,
-                    String(activeSub.id),
-                    String(attrs.product_id),
-                    String(attrs.variant_id),
-                    new Date(attrs.renews_at || attrs.ends_at || Date.now() + 30 * 24 * 60 * 60 * 1000),
-                    planName,
-                    minutesLimit,
-                    String(attrs.status).toLowerCase()
-                );
-                console.log(`✅ [Sync] Successfully recovered subscription: ${activeSub.id}`);
-                return true;
+                        console.log(`🔋 [Sync] Aggregating Plan: ${planName} (ID: ${sub.id})`);
+                        await activateSubscription(
+                            userId, String(sub.id), String(attrs.product_id), String(attrs.variant_id),
+                            new Date(attrs.renews_at || attrs.ends_at || Date.now() + 30 * 24 * 60 * 60 * 1000),
+                            planName, minutesLimit, String(attrs.status).toLowerCase()
+                        );
+                        itemsSynced++;
+                    }
+                }
             }
         }
 
-        // --- 2. SYNC ORDERS (For Add-ons) ---
-        // CRITICAL FIX: Orders use filter[email], Subscriptions use filter[user_email]
-        const orderUrl = `https://api.lemonsqueezy.com/v1/orders?filter[email]=${encodeURIComponent(email)}&sort=-created_at`;
-        console.log(`🔍 [Sync] Calling Orders API: ${orderUrl}`);
+        // --- 4. SYNC ALL PAID ORDERS (For Add-ons) ---
+        // Sorting ascending to process them in order
+        const orderUrl = `https://api.lemonsqueezy.com/v1/orders?filter[email]=${encodeURIComponent(email)}&sort=created_at`;
+        console.log(`🔍 [Sync] Checking ALL orders: ${orderUrl}`);
         const orderRes = await fetch(orderUrl, {
-            headers: {
-                'Accept': 'application/vnd.api+json',
-                'Authorization': `Bearer ${apiKey}`
-            }
+            headers: { 'Accept': 'application/vnd.api+json', 'Authorization': `Bearer ${apiKey}` }
         });
 
         if (orderRes.ok) {
@@ -275,24 +321,23 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
             const orders = data.data || [];
             console.log(`🔍 [Sync] Found ${orders.length} orders in LS Orders API.`);
 
-            // Look for recent success orders that are add-ons
             for (const order of orders) {
                 const attrs = order.attributes;
                 if (attrs.status === 'paid') {
                     const customData = order.meta?.custom_data || attrs.custom_data || {};
                     if (customData.type === 'addon' && customData.minutes) {
                         const minutesToAdd = parseInt(String(customData.minutes));
-                        console.log(`🔋 [Sync] Found paid add-on order ${order.id}. Adding ${minutesToAdd} minutes.`);
-                        await purchaseAddon(userId, minutesToAdd);
-                        // In theory we could continue for multiple orders, but we'll return true if we found at least one
-                        return true;
+                        console.log(`🔋 [Sync] Aggregating Add-on Order: ${order.id} (+${minutesToAdd} mins)`);
+                        const orderIdString = String(order.id);
+                        await purchaseAddon(userId, minutesToAdd, orderIdString);
+                        itemsSynced++;
                     }
                 }
             }
         }
 
-        console.log('ℹ️ [Sync] Finished: No actionable subscriptions or orders found for this email.');
-        return false;
+        console.log(`ℹ️ [Sync] Finished: Processed ${itemsSynced} actionable items.`);
+        return itemsSynced > 0;
     } catch (error) {
         console.error('❌ [Sync] Critical Error during recovery:', error);
         return false;
