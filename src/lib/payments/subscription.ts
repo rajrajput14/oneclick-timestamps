@@ -101,7 +101,7 @@ export async function activateSubscription(
 
         await tx.update(users).set(updateData).where(eq(users.id, userId));
 
-        console.log(`✅ [DB] Plan Activation complete for ${userId}. (Total Aggregated Plan: ${planName})`);
+        console.log(`✅ [DB] Plan Activation complete for ${userId}. (Total Aggregated Plan: ${finalPlanName})`);
 
         if (existing) {
             await tx
@@ -330,11 +330,13 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
 
                         const isUpgrade = existingSub && String(existingSub.variantId) !== String(attrs.variant_id);
 
-                        // Sync if it's a NEW subscription OR an Upgrade within the same ID
-                        if (!existingSub || isUpgrade) {
-                            const { planName, minutesLimit } = getPlanConfig(String(attrs.variant_id), metadata, attrs.product_name);
+                        // SELF-HEALING: Also sync if the USER table is inconsistent with this variant
+                        const { planName, minutesLimit } = getPlanConfig(String(attrs.variant_id), metadata, attrs.product_name);
+                        const isIncorrectInDB = user && (user.subscriptionPlan !== planName || (user.minutesLimit || 0) < minutesLimit);
 
-                            console.log(`🔋 [Sync] Aggregating ${planName} (ID: ${sub.id}, Upgrade: ${!!isUpgrade})`);
+                        // Sync if it's a NEW subscription OR an Upgrade OR if we need to fix the DB name/limit
+                        if (!existingSub || isUpgrade || isIncorrectInDB) {
+                            console.log(`🔋 [Sync] Aggregating ${planName} (ID: ${sub.id}, Upgrade: ${!!isUpgrade}, Heal: ${!!isIncorrectInDB})`);
                             await activateSubscription(
                                 userId, String(sub.id), String(attrs.product_id), String(attrs.variant_id),
                                 new Date(attrs.renews_at || attrs.ends_at || Date.now() + 30 * 24 * 60 * 60 * 1000),
