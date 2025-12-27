@@ -418,3 +418,52 @@ export async function getCustomerPortalUrl(lemonSqueezyId: string): Promise<stri
         return null;
     }
 }
+
+/**
+ * Ensure the user has a LemonSqueezy Customer ID in our DB.
+ * If missing, try to fetch it by email from LemonSqueezy.
+ */
+export async function ensureLemonSqueezyCustomerId(userId: string, email: string): Promise<string | null> {
+    const user = await db.query.users.findFirst({
+        where: eq(users.id, userId),
+    });
+
+    if (user?.lemonsqueezyCustomerId) {
+        return user.lemonsqueezyCustomerId;
+    }
+
+    console.log(`🔍 [Billing] Customer ID missing for ${email}, searching LemonSqueezy...`);
+    const apiKey = process.env.LEMONSQUEEZY_API_KEY;
+    if (!apiKey) {
+        console.error('❌ [Billing] FAILED: LEMONSQUEEZY_API_KEY missing');
+        return null;
+    }
+
+    try {
+        const url = `https://api.lemonsqueezy.com/v1/customers?filter[email]=${encodeURIComponent(email)}`;
+        const response = await fetch(url, {
+            headers: { 'Accept': 'application/vnd.api+json', 'Authorization': `Bearer ${apiKey}` }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            const customers = data.data || [];
+            if (customers.length > 0) {
+                const customerId = String(customers[0].id);
+                console.log(`✅ [Billing] Found Customer ID: ${customerId} for ${email}`);
+
+                // Update DB to avoid searching again
+                await db.update(users)
+                    .set({ lemonsqueezyCustomerId: customerId })
+                    .where(eq(users.id, userId));
+
+                return customerId;
+            }
+        }
+        console.log(`⚠️ [Billing] No customer found in LS for ${email}`);
+        return null;
+    } catch (error) {
+        console.error('❌ [Billing] Error fetching customer ID:', error);
+        return null;
+    }
+}

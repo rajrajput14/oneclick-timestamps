@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/user';
 import { auth } from '@clerk/nextjs/server';
+import { ensureLemonSqueezyCustomerId } from '@/lib/payments/subscription';
 
 export async function GET(req: NextRequest) {
     try {
@@ -15,9 +16,12 @@ export async function GET(req: NextRequest) {
         }
 
         const user = currentUserRes;
-        const customerId = user.lemonsqueezyCustomerId;
+
+        // Ensure we have a customer ID (fallback for existing users)
+        const customerId = await ensureLemonSqueezyCustomerId(user.id, user.email);
 
         if (!customerId) {
+            console.log(`[InvoicesAPI] No customer ID found for user ${user.id}`);
             return NextResponse.json([]); // No invoices if no customer ID yet
         }
 
