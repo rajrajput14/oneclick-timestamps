@@ -270,6 +270,7 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
 
             if (directRes.ok) {
                 const subData = await directRes.json();
+                console.log(`📋 [Sync] RAW Direct ID Response:`, JSON.stringify(subData));
                 const sub = subData.data;
                 const attrs = sub.attributes;
 
@@ -299,11 +300,10 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
             const subRes = await fetch(subUrl, {
                 headers: { 'Accept': 'application/vnd.api+json', 'Authorization': `Bearer ${apiKey}` }
             });
-
             if (subRes.ok) {
                 const data = await subRes.json();
                 const subs = data.data || [];
-                console.log(`🔍 [Sync] Found ${subs.length} subs for ${searchEmail}`);
+                console.log(`🔍 [Sync] Found ${subs.length} candidates in LS Subscriptions API for ${searchEmail}.`);
 
                 for (const sub of subs) {
                     const attrs = sub.attributes;
@@ -332,6 +332,10 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
                         }
                     }
                 }
+            } else {
+                console.error(`❌ [Sync] Subscriptions API Error: ${subRes.status} ${subRes.statusText}`);
+                const errText = await subRes.text();
+                console.log(`📋 [Sync] Error Body:`, errText);
             }
         }
 
