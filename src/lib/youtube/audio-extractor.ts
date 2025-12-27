@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { tmpdir } from 'os';
 import { v4 as uuidv4 } from 'uuid';
+import { SampleInterval } from './sampling';
 
 export interface AudioExtractionResult {
     filePath: string;
@@ -111,6 +112,30 @@ export async function extractAudio(
             }
         });
     });
+}
+
+/**
+ * Extract multiple audio samples in parallel.
+ * Max concurrency: 5
+ */
+export async function extractAudioSamples(
+    videoId: string,
+    intervals: SampleInterval[]
+): Promise<AudioExtractionResult[]> {
+    console.log(`[AudioExtractor] Extracting ${intervals.length} samples in parallel for ${videoId}`);
+
+    const results: AudioExtractionResult[] = [];
+    const concurrencyLimit = 5;
+
+    for (let i = 0; i < intervals.length; i += concurrencyLimit) {
+        const batch = intervals.slice(i, i + concurrencyLimit);
+        const batchPromises = batch.map(interval => extractAudio(videoId, interval.start, interval.duration));
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+        console.log(`[AudioExtractor] Batch complete, total extracted: ${results.length}/${intervals.length}`);
+    }
+
+    return results;
 }
 /**
  * Get video duration in seconds using yt-dlp

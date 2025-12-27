@@ -10,6 +10,7 @@ import Link from 'next/link';
 import ManageSubscriptionButton from '@/components/dashboard/ManageSubscriptionButton';
 import PaymentRefresh from '@/components/dashboard/PaymentRefresh';
 import BillingUsageMetrics from '@/components/dashboard/BillingUsageMetrics';
+import BillingHistory from '@/components/dashboard/BillingHistory';
 
 export default async function BillingPage(props: {
     searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -60,18 +61,7 @@ export default async function BillingPage(props: {
                 }}
             />
 
-            {/* Invoices Placeholder / Info */}
-            <div className="glass rounded-[2rem] md:rounded-[2.5rem] p-8 md:p-10 border border-white/5 flex flex-col items-center text-center space-y-6">
-                <div className="w-12 h-12 md:w-16 md:h-16 bg-white/5 rounded-2xl flex items-center justify-center">
-                    <svg className="w-6 h-6 md:w-8 md:h-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                </div>
-                <div className="space-y-2">
-                    <h3 className="text-xl md:text-2xl font-black uppercase tracking-tight">Need your invoices?</h3>
-                    <p className="text-sm text-muted-foreground max-w-md">Manage your past invoices directly through Lemon Squeezy via the portal button above.</p>
-                </div>
-            </div>
+            <BillingHistory />
         </div>
     );
 }

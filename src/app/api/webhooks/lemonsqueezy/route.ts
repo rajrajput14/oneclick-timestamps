@@ -92,6 +92,14 @@ export async function POST(req: NextRequest) {
                 }
             }
 
+            // Store LemonSqueezy Customer ID (Sync Point)
+            if (body.attributes?.customer_id) {
+                console.log(`[Webhook] UPDATING Customer ID for User: ${userId} (${body.attributes.customer_id})`);
+                await tx.update(users)
+                    .set({ lemonsqueezyCustomerId: String(body.attributes.customer_id) })
+                    .where(eq(users.id, userId));
+            }
+
             // Handle Plan Updates (Subscription Created/Updated)
             if (eventName === 'subscription_created' || eventName === 'subscription_updated') {
                 const attrs = body.attributes;

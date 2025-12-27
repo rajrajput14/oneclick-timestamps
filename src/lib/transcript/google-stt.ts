@@ -241,3 +241,39 @@ export async function transcribeAudioWithGoogle(
         throw new Error(`Google Speech-to-Text failed: ${error.message}`);
     }
 }
+
+/**
+ * Transcribe multiple specific samples in parallel.
+ * This is the core of the new FAST pipeline.
+ */
+export async function transcribeBatch(
+    samples: { filePath: string, startTime: number }[],
+    onProgress?: (progress: number, description: string) => Promise<void>
+): Promise<STTResult> {
+    let bucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET;
+    if (!bucketName) {
+        throw new Error('GOOGLE_CLOUD_STORAGE_BUCKET environment variable is not set.');
+    }
+    bucketName = bucketName.replace(/^gs:\/\//, '').replace(/\/$/, '');
+
+    console.log(`[GoogleSTT] Transcribing batch of ${samples.length} samples.`);
+    if (onProgress) await onProgress(40, `Transcribing ${samples.length} samples in parallel...`);
+
+    const transcriptionPromises = samples.map(sample =>
+        transcribeChunk(sample.filePath, bucketName!, sample.startTime)
+    );
+
+    const chunkResults = await Promise.all(transcriptionPromises);
+    const allSegments = chunkResults.flat().sort((a, b) => a.time - b.time);
+
+    // Filter out potential duplicates or very close segments if they exist (rare in sampling)
+    const uniqueSegments = allSegments.filter((seg, index, self) =>
+        index === 0 || seg.time !== self[index - 1].time
+    );
+
+    return {
+        segments: uniqueSegments,
+        language: 'en-US', // Auto-detection result is per-chunk in transcribeChunk, but we return a single lang for simplicity
+        processedSeconds: samples.length * 40 // Approximation for billing/usage
+    };
+}

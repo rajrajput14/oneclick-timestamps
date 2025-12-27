@@ -17,6 +17,7 @@ export const users = pgTable('users', {
     addonMinutes: integer('addon_minutes').default(0),
     billingCycleStart: timestamp('billing_cycle_start').defaultNow(),
     billingCycleEnd: timestamp('billing_cycle_end'),
+    lemonsqueezyCustomerId: text('lemonsqueezy_customer_id'),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => ({

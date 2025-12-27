@@ -48,13 +48,14 @@ YOUR TASK:
 Analyze the provided speech-to-text segments (which include timestamps) to identify natural topic transitions and group them into logical chapters.
 
 STRICT REQUIREMENTS:
-1. TOPIC BOUNDARIES: Identify where the speaker starts a new subject or changes perspective.
-2. DURATION RULE: Each chapter MUST be at least 45 seconds long. If a topic is shorter, merge it with the adjacent one.
-3. TITLE QUALITY: Create short (3-7 words), punchy, SEO-friendly titles in the ORIGINAL language (if non-English).
-4. ABSOLUTE TIMESTAMPS: You MUST NOT invent timestamps. You must identify which segment index represents the start of a new chapter.
-5. NO GENERIC TITLES: Avoid "Introduction", "Summary", "Conclusion" if possible. Use specific value-based titles.
-6. FIRST CHAPTER: The first chapter must always start at segment index 0 (00:00).
-7. LANGUAGE PRESERVATION: Final titles MUST be in the ORIGINAL language of the transcript. Do NOT translate the output.
+1. SAMPLED SNIPPETS: Note that the provided transcript is NOT continuous. These are periodic 40-second samples from across the video.
+2. TOPIC INFERENCE: Use the snippets to infer the logical chapter structure of the entire video.
+3. TOPIC BOUNDARIES: Identify where the subject matter clearly shifts between samples or within a sample.
+4. TITLE QUALITY: Create short (3-7 words), punchy, SEO-friendly titles in the ORIGINAL language (if non-English).
+5. ABSOLUTE TIMESTAMPS: You MUST NOT invent timestamps. Use the provided segment times to mark the start of chapters.
+6. NO GENERIC TITLES: Avoid "Introduction", "Summary", "Conclusion" if possible. Use specific value-based titles.
+7. FIRST CHAPTER: The first chapter must always start at chronological time 0:00 (even if the first segment is slightly after).
+8. LANGUAGE PRESERVATION: Final titles MUST be in the ORIGINAL language of the transcript. Do NOT translate the output.
 
 OUTPUT FORMAT:
 Respond with ONLY a valid JSON array of objects.
