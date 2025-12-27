@@ -22,17 +22,34 @@ export default function BillingUsageMetrics({ initialData }: { initialData: Bill
     const [loading, setLoading] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
 
+    // Sync internal state with props if they change (important for router.refresh())
+    useEffect(() => {
+        setData(initialData);
+    }, [initialData]);
+
     const refreshStatus = useCallback(async (manualSync = false) => {
         setLoading(true);
         try {
             if (manualSync) {
                 console.log('🔄 Triggering manual subscription sync...');
-                await fetch('/api/subscription/sync', { method: 'POST' });
+                await fetch('/api/subscription/sync', {
+                    method: 'POST',
+                    cache: 'no-store'
+                });
             }
 
-            const res = await fetch('/api/billing/status');
+            // Add cache busting timestamp
+            const res = await fetch(`/api/billing/status?t=${Date.now()}`, {
+                cache: 'no-store',
+                headers: {
+                    'Pragma': 'no-cache',
+                    'Cache-Control': 'no-cache'
+                }
+            });
+
             if (res.ok) {
                 const newData = await res.json();
+                console.log('📊 New billing data received:', newData.plan, newData.subscriptionStatus);
                 setData(newData);
 
                 if (manualSync) {
@@ -45,7 +62,7 @@ export default function BillingUsageMetrics({ initialData }: { initialData: Bill
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [initialData]);
 
     // Initial refresh on mount to ensure freshness (anti-caching measure)
     useEffect(() => {
@@ -59,18 +76,38 @@ export default function BillingUsageMetrics({ initialData }: { initialData: Bill
         return () => window.removeEventListener('billing-update', handleUpdate);
     }, [refreshStatus]);
 
-    // Effect to handle payment success detection
+    // Effect to handle payment success detection with aggressive polling
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         if (params.get('payment') === 'success') {
             setShowSuccess(true);
-            // Initial burst of refreshes to catch LS update
-            const intervals = [500, 2000, 5000, 10000];
-            intervals.forEach(delay => {
-                setTimeout(refreshStatus, delay);
-            });
-            // Hide message after some time
+
+            let pollCount = 0;
+            const maxPolls = 15; // Poll for ~45 seconds
+
+            const pollInterval = setInterval(async () => {
+                pollCount++;
+                console.log(`🔍 Aggressive poll ${pollCount}/${maxPolls}...`);
+
+                await refreshStatus();
+
+                // If the plan has changed from Free, or some other change detected, we can stop
+                // Note: We check data.plan because refreshStatus updates it
+                setData(prev => {
+                    if (prev.plan !== 'Free' || pollCount >= maxPolls) {
+                        clearInterval(pollInterval);
+                        if (prev.plan !== 'Free') {
+                            console.log('✅ Plan change detected! Ending aggressive polling.');
+                        }
+                    }
+                    return prev;
+                });
+            }, 3000);
+
+            // Hide success message after some time
             setTimeout(() => setShowSuccess(false), 8000);
+
+            return () => clearInterval(pollInterval);
         }
     }, [refreshStatus]);
 

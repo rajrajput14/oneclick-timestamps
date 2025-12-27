@@ -16,7 +16,11 @@ export default function PaymentRefresh() {
         // 1. Trigger an immediate manual sync via API to bypass webhook delay
         const triggerSync = async () => {
             try {
-                await fetch('/api/subscription/sync', { method: 'POST' });
+                console.log('🔄 Automatic background sync starting...');
+                await fetch('/api/subscription/sync', {
+                    method: 'POST',
+                    cache: 'no-store'
+                });
                 // Trigger immediate UI refresh for any listening client components
                 window.dispatchEvent(new CustomEvent('billing-update'));
                 router.refresh();

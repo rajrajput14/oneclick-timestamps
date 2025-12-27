@@ -12,7 +12,8 @@ export async function activateSubscription(
     variantId: string,
     currentPeriodEnd: Date,
     planName?: string,
-    minutesLimit?: number
+    minutesLimit?: number,
+    status: string = 'active'
 ): Promise<void> {
     console.log('🔄 Activating subscription for user:', userId, 'Plan:', planName);
 
@@ -23,7 +24,7 @@ export async function activateSubscription(
         });
 
         const updateData: any = {
-            subscriptionStatus: 'active',
+            subscriptionStatus: status,
             subscriptionId: lemonSqueezyId,
             updatedAt: new Date(),
         };
@@ -136,7 +137,8 @@ export async function getSubscriptionStatus(userId: string): Promise<{
         where: eq(users.id, userId),
     });
 
-    if (!user || user.subscriptionStatus !== 'active') {
+    const activeStatuses = ['active', 'trialing', 'past_due'];
+    if (!user || !activeStatuses.includes(user.subscriptionStatus || '')) {
         return { isActive: false, subscription: null };
     }
 
@@ -222,7 +224,8 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
                 variantId,
                 new Date(attrs.renews_at || attrs.ends_at || Date.now() + 30 * 24 * 60 * 60 * 1000),
                 planName,
-                minutesLimit
+                minutesLimit,
+                String(attrs.status).toLowerCase()
             );
 
             return true;
