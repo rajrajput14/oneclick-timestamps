@@ -43,26 +43,28 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Missing user_id mapping' }, { status: 400 });
         }
 
+        // 1️⃣ IDEMPOTENCY CHECK (CRITICAL) - Outside to prevent transaction poisoning
+        let isDuplicate = false;
+        let tableExists = true;
+        try {
+            const existingEvent = await db.query.webhookEvents.findFirst({
+                where: eq(webhookEvents.eventId, eventId),
+            });
+            if (existingEvent) isDuplicate = true;
+        } catch (e) {
+            tableExists = false;
+            console.warn('[Webhook] WARNING: Idempotency table "webhook_events" not found. Proceeding without deduplication.');
+        }
+
+        if (isDuplicate) {
+            console.log(`[Webhook] Duplicate event ignored: ${eventId}`);
+            return NextResponse.json({ success: true, message: 'Duplicate event' });
+        }
+
         console.log(`[Webhook] Starting transaction for user ${providedUserId} (Event ID: ${eventId})`);
 
         // 3️⃣ DATABASE TRANSACTIONS (MULTI-USER SAFE)
         return await db.transaction(async (tx) => {
-            // 1️⃣ IDEMPOTENCY CHECK (CRITICAL) - Now inside transaction
-            try {
-                const existingEvent = await tx.query.webhookEvents.findFirst({
-                    where: eq(webhookEvents.eventId, eventId),
-                });
-
-                if (existingEvent) {
-                    console.log(`[Webhook] Duplicate event ignored (Event ID: ${eventId})`);
-                    return NextResponse.json({ success: true, message: 'Duplicate event' });
-                }
-            } catch (e) {
-                // Graceful fallback: If the table doesn't exist yet, we log it but don't crash
-                // This prevents 500 errors if the user hasn't run migrations yet
-                console.warn('[Webhook] WARNING: Could not check idempotency. Is "webhook_events" table missing?', e);
-            }
-
             // Find internal user (strict mapping)
             const user = await tx.query.users.findFirst({
                 where: (u, { or, eq }) => or(eq(u.id, providedUserId), eq(u.clerkId, providedUserId))
@@ -75,15 +77,19 @@ export async function POST(req: NextRequest) {
 
             const userId = user.id;
 
-            // PRE-EMPTIVELY STORE EVENT ID (Idempotency)
-            try {
-                await tx.insert(webhookEvents).values({
-                    eventId,
-                    eventName,
-                    processedAt: new Date(),
-                });
-            } catch (e) {
-                console.warn('[Webhook] WARNING: Could not store event ID. Is "webhook_events" table missing?', e);
+            // PRE-EMPTIVELY STORE EVENT ID (Idempotency) - Only if table exists
+            if (tableExists) {
+                try {
+                    await tx.insert(webhookEvents).values({
+                        eventId,
+                        eventName,
+                        processedAt: new Date(),
+                    });
+                } catch (e) {
+                    // Unique constraint violation or table issue
+                    console.error('[Webhook] Failed to store event ID in transaction:', e);
+                    throw e; // Rollback to be safe
+                }
             }
 
             // Handle Plan Updates (Subscription Created/Updated)
