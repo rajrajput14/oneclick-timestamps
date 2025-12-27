@@ -196,21 +196,29 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
             console.log('✅ Found valid subscription:', activeSub.id, 'Status:', activeSub.attributes.status);
             const attrs = activeSub.attributes;
 
-            // In list response, LS doesn't always return the full metadata
-            // But we can check product_id/variant_id or use a default
-            let minutesLimit = 500;
-            let planName = 'Creator';
+            // Extract plan details from metadata if available (LS returns this in meta)
+            // or we can infer it from the variant_id
+            const metadata = activeSub.meta?.custom_data || activeSub.meta?.metadata || attrs.metadata || {};
 
-            // Check for specific variant IDs if known (Creator vs Pro Creator)
-            // If we don't know the IDs, we'll stick to a safe default or ideally
-            // do a second request for variant details if needed.
-            // For now, let's assume if it's found, it's at least 'Creator'.
+            let minutesLimit = metadata.minutes_limit ? parseInt(metadata.minutes_limit) : 500;
+            let planName = metadata.plan_name || 'Creator';
+
+            // Fallback: Infer from variant_id if we have known IDs or use price as proxy
+            // In a real app, you'd map these to your specific variant IDs
+            const variantId = String(attrs.variant_id);
+            console.log(`[Sync] Variant ID: ${variantId}, Meta Plan: ${planName}, Meta Limit: ${minutesLimit}`);
+
+            // Pro Creator usually has higher limits
+            if (!metadata.plan_name && (variantId === '56789' || minutesLimit > 500)) {
+                planName = 'Pro Creator';
+                if (!metadata.minutes_limit) minutesLimit = 1000;
+            }
 
             await activateSubscription(
                 userId,
                 activeSub.id,
                 String(attrs.product_id),
-                String(attrs.variant_id),
+                variantId,
                 new Date(attrs.renews_at || attrs.ends_at || Date.now() + 30 * 24 * 60 * 60 * 1000),
                 planName,
                 minutesLimit

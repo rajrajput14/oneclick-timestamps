@@ -22,13 +22,23 @@ export default function BillingUsageMetrics({ initialData }: { initialData: Bill
     const [loading, setLoading] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
 
-    const refreshStatus = useCallback(async () => {
+    const refreshStatus = useCallback(async (manualSync = false) => {
         setLoading(true);
         try {
+            if (manualSync) {
+                console.log('🔄 Triggering manual subscription sync...');
+                await fetch('/api/subscription/sync', { method: 'POST' });
+            }
+
             const res = await fetch('/api/billing/status');
             if (res.ok) {
                 const newData = await res.json();
                 setData(newData);
+
+                if (manualSync) {
+                    // Trigger update across other components if any
+                    window.dispatchEvent(new CustomEvent('billing-update'));
+                }
             }
         } catch (error) {
             console.error('Failed to refresh billing status:', error);
@@ -158,7 +168,7 @@ export default function BillingUsageMetrics({ initialData }: { initialData: Bill
                         <Button
                             variant="outline"
                             size="sm"
-                            onClick={refreshStatus}
+                            onClick={() => refreshStatus(true)}
                             disabled={loading}
                             className="text-[10px] font-bold tracking-widest uppercase py-4"
                         >
