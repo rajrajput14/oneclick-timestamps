@@ -100,6 +100,7 @@ export async function POST(req: NextRequest) {
                 let minutesLimit = metadata.minutes_limit ? parseInt(metadata.minutes_limit) : 500;
                 let planName = metadata.plan_name || (minutesLimit > 500 ? 'Pro Creator' : 'Creator');
 
+                console.log(`[Webhook] CALLING activateSubscription (User: ${userId}, Plan: ${planName})`);
                 await activateSubscription(
                     userId,
                     String(body.id),
@@ -115,7 +116,7 @@ export async function POST(req: NextRequest) {
 
             // Handle Cancellation
             if (eventName === 'subscription_cancelled' || eventName === 'subscription_expired') {
-                // Handler deactivation within transaction
+                console.log(`[Webhook] CALLING deactivateSubscription (User: ${userId})`);
                 await deactivateSubscription(String(body.id), tx);
             }
 
@@ -126,11 +127,12 @@ export async function POST(req: NextRequest) {
 
                 if (isAddon && minutesValue) {
                     const minutesToAdd = parseInt(String(minutesValue));
+                    console.log(`[Webhook] CALLING purchaseAddon (User: ${userId}, Minutes: ${minutesToAdd})`);
                     await purchaseAddon(userId, minutesToAdd, tx);
                 }
             }
 
-            console.log(`[Webhook] Successfully processed ${eventName} for user ${userId}`);
+            console.log(`✅ [Webhook] TRANSACTION_COMMITTED for User: ${userId} (Event: ${eventId})`);
             return NextResponse.json({ success: true });
         });
 

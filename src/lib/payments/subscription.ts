@@ -42,7 +42,6 @@ export async function activateSubscription(
         if (planName) updateData.subscriptionPlan = planName;
         if (minutesLimit !== undefined) updateData.minutesLimit = minutesLimit;
 
-        // Reset minutes if they were previously inactive or on Free tier
         const isPreviouslyActive = user?.subscriptionStatus === 'active';
         if (!isPreviouslyActive) {
             updateData.minutesUsed = 0;
@@ -52,12 +51,14 @@ export async function activateSubscription(
             }
         }
 
-        await tx
+        console.log(`[DB] Updating User ${userId} with:`, JSON.stringify(updateData));
+
+        const result = await tx
             .update(users)
             .set(updateData)
             .where(eq(users.id, userId));
 
-        console.log(`✅ User ${userId} updated to active subscription ${lemonSqueezyId}`);
+        console.log(`✅ [DB] Update complete for ${userId}. (Previously Active: ${isPreviouslyActive})`);
 
         // Create or update subscription record
         const existing = await tx.query.subscriptions.findFirst({
@@ -207,6 +208,7 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
     try {
         // --- 1. SYNC SUBSCRIPTIONS ---
         const subUrl = `https://api.lemonsqueezy.com/v1/subscriptions?filter[user_email]=${encodeURIComponent(email)}`;
+        console.log(`🔍 [Sync] Calling Subscriptions API: ${subUrl}`);
         const subRes = await fetch(subUrl, {
             headers: {
                 'Accept': 'application/vnd.api+json',
