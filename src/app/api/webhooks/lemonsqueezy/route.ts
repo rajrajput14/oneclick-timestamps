@@ -5,6 +5,7 @@ import { users, subscriptions, webhookEvents } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { activateSubscription, deactivateSubscription, purchaseAddon } from '@/lib/payments/subscription';
 
+export const runtime = "nodejs";
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
