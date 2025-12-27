@@ -43,17 +43,19 @@ export async function activateSubscription(
             where: eq(subscriptions.lemonSqueezyId, lemonSqueezyId),
         });
 
-        // 🚀 ADDITIVE LOGIC (Summing up plan minutes)
+        // 🚀 SMART ADDITIVE LOGIC (Summing up plan minutes)
         if (planName) updateData.subscriptionPlan = planName;
 
         if (minutesLimit !== undefined) {
-            if (!existing) {
-                // If it's a NEW subscription, we add its minutes to the existing limit
-                console.log(`🔋 [DB] Adding ${minutesLimit} new plan minutes to user ${userId}`);
+            const isVariantChange = existing && String(existing.variantId) !== String(variantId);
+
+            if (!existing || isVariantChange) {
+                // If it's a NEW subscription OR a Tier Upgrade (Variant Change)
+                // We ADD its minutes to the existing limit
+                console.log(`🔋 [DB] Adding ${minutesLimit} plan minutes to user ${userId} (New/Upgrade)`);
                 updateData.minutesLimit = sql`${users.minutesLimit} + ${minutesLimit}`;
             } else {
-                // If it's an update to an EXISTING subscription, we only set the limit 
-                // to exactly what LemonSqueezy says (prevents infinite stacking on retries)
+                // If it's just a regular renewal update, we maintain the newest limit
                 updateData.minutesLimit = minutesLimit;
             }
         }
@@ -67,7 +69,7 @@ export async function activateSubscription(
             }
         }
 
-        console.log(`[DB] Syncing User ${userId} (Existing Sub: ${!!existing})`);
+        console.log(`[DB] Syncing User ${userId} (Existing: ${!!existing})`);
 
         await tx.update(users).set(updateData).where(eq(users.id, userId));
 
@@ -258,8 +260,9 @@ export async function syncSubscriptionWithLemonSqueezy(userId: string, email: st
         }
 
         // --- 2. SYNC ORDERS (For Add-ons) ---
-        console.log('🔍 [Sync] No active subscriptions found. Checking Orders for add-ons...');
-        const orderUrl = `https://api.lemonsqueezy.com/v1/orders?filter[user_email]=${encodeURIComponent(email)}`;
+        // CRITICAL FIX: Orders use filter[email], Subscriptions use filter[user_email]
+        const orderUrl = `https://api.lemonsqueezy.com/v1/orders?filter[email]=${encodeURIComponent(email)}&sort=-created_at`;
+        console.log(`🔍 [Sync] Calling Orders API: ${orderUrl}`);
         const orderRes = await fetch(orderUrl, {
             headers: {
                 'Accept': 'application/vnd.api+json',
