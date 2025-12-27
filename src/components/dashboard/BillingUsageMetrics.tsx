@@ -74,7 +74,7 @@ export default function BillingUsageMetrics({ initialData }: { initialData: Bill
         }
     }, [refreshStatus]);
 
-    const isPaidUser = data.subscriptionStatus === 'active' || data.subscriptionStatus === 'trialing';
+    const isPaidUser = (data.subscriptionStatus === 'active' || data.subscriptionStatus === 'trialing' || data.subscriptionStatus === 'past_due') && data.plan !== 'Free';
     const totalMinutes = data.minutesLimit + data.addonMinutes;
     const minutesRemaining = data.totalAvailable;
 
@@ -95,13 +95,11 @@ export default function BillingUsageMetrics({ initialData }: { initialData: Bill
                 </div>
             )}
 
-            {/* Syncing Indicator Overlay (Subtle) */}
-
             {/* Account Status Badge (Floating in parent usually, but we'll provide it here or handle separately) */}
             <div className="flex justify-end -mb-8">
-                <Badge variant={isPaidUser ? (data.plan === 'Free' ? 'default' : 'success') : 'default'} className="px-6 md:px-8 py-2 md:py-3 text-[10px] md:text-xs font-bold tracking-wide border-border/50">
-                    {isPaidUser && data.plan !== 'Free' ? <Sparkles className="w-3 h-3 md:w-4 md:h-4 mr-2 md:mr-3" /> : <ShieldCheck className="w-3 h-3 md:w-4 md:h-4 mr-2 md:mr-3" />}
-                    {isPaidUser ? (data.plan === 'Free' ? 'FREE TIER' : `${data.plan.toUpperCase()} ACTIVE`) : 'ACCOUNT INACTIVE'}
+                <Badge variant={isPaidUser ? 'success' : 'default'} className="px-6 md:px-8 py-2 md:py-3 text-[10px] md:text-xs font-bold tracking-wide border-border/50">
+                    {isPaidUser ? <Sparkles className="w-3 h-3 md:w-4 md:h-4 mr-2 md:mr-3" /> : <ShieldCheck className="w-3 h-3 md:w-4 md:h-4 mr-2 md:mr-3" />}
+                    {isPaidUser ? `${data.plan.toUpperCase()} ACTIVE` : 'FREE TIER'}
                 </Badge>
             </div>
 

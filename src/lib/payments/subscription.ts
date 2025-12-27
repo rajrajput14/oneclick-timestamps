@@ -32,8 +32,9 @@ export async function activateSubscription(
         if (planName) updateData.subscriptionPlan = planName;
         if (minutesLimit !== undefined) updateData.minutesLimit = minutesLimit;
 
-        // Only reset minutes if they weren't already a Pro user
-        if (!user || user.subscriptionStatus !== 'active') {
+        // Reset minutes if they were previously inactive or on Free tier
+        const isPreviouslyActive = user?.subscriptionStatus === 'active';
+        if (!isPreviouslyActive) {
             updateData.minutesUsed = 0;
             // Default to 500 if NO limit provided and NO previous limit
             if (updateData.minutesLimit === undefined) {

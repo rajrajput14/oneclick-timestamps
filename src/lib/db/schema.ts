@@ -10,7 +10,7 @@ export const users = pgTable('users', {
     name: text('name'),
     imageUrl: text('image_url'),
     subscriptionPlan: text('subscription_plan').default('Free'), // 'Free', 'Creator', 'Pro Creator'
-    subscriptionStatus: text('subscription_status').default('active'), // 'active', 'inactive', 'past_due'
+    subscriptionStatus: text('subscription_status').default('inactive'), // 'active', 'inactive', 'past_due'
     subscriptionId: text('subscription_id'),
     minutesUsed: integer('minutes_used').default(0),
     minutesLimit: integer('minutes_limit').default(60), // Free: 60, Creator: 500, Pro: 1500

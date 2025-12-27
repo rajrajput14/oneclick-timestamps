@@ -56,9 +56,14 @@ export async function POST(req: NextRequest) {
             const attributes = body.attributes;
             const status = attributes.status;
 
-            // Read minutes_limit from product metadata as requested
-            const minutesLimit = metadata?.minutes_limit ? parseInt(metadata.minutes_limit) : 60;
-            const planName = metadata?.plan_name || (minutesLimit > 500 ? 'Pro Creator' : 'Creator');
+            // Read minutes_limit from product metadata or default to 500 for paid tiers
+            let minutesLimit = metadata?.minutes_limit ? parseInt(metadata.minutes_limit) : 500;
+            let planName = metadata?.plan_name || (minutesLimit > 500 ? 'Pro Creator' : 'Creator');
+
+            // Secondary check: if it's explicitly Pro Creator in some metadata field
+            if (!metadata?.plan_name && minutesLimit > 500) {
+                planName = 'Pro Creator';
+            }
             const billingCycleEnd = attributes.renews_at ? new Date(attributes.renews_at) : null;
 
             await db.update(users)

@@ -73,7 +73,7 @@ export async function syncUser() {
                 name: `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || null,
                 imageUrl: clerkUser.imageUrl || null,
                 subscriptionPlan: 'Free',
-                subscriptionStatus: 'active',
+                subscriptionStatus: 'inactive',
                 minutesUsed: 0,
                 minutesLimit: 60,
                 addonMinutes: 0,
