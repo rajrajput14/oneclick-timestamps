@@ -134,7 +134,9 @@ async function transcribeChunk(
         };
 
         const [operation] = await client.longRunningRecognize(request);
+        console.log("🟢 STEP 5: Speech-to-text started");
         const [response] = await operation.promise();
+        console.log("🟢 STEP 6: Speech-to-text completed");
 
         const segments: STTSegment[] = [];
         if (response.results) {

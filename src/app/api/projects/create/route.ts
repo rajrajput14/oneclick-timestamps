@@ -21,7 +21,9 @@ import path from 'path';
  * POST /api/projects/create
  */
 export async function POST(req: NextRequest) {
-    console.log('[API/Create] Request started');
+    console.log("🟢 STEP 1: Request received");
+    console.log("Backend PID:", process.pid);
+    console.log("Function entry timestamp:", Date.now());
     try {
         // Check authentication
         const { userId: clerkUserId } = await auth();
@@ -57,6 +59,7 @@ export async function POST(req: NextRequest) {
             if (!videoId) {
                 return NextResponse.json({ error: 'Invalid YouTube URL' }, { status: 400 });
             }
+            console.log("🟢 STEP 2: YouTube URL validated");
 
             // [INSTANT RESPONSE] Create project record immediately
             const [project] = await db
@@ -99,18 +102,24 @@ export async function POST(req: NextRequest) {
                     // 1. Fetch Metadata (Slow)
                     let durationSeconds = 0;
                     try {
+                        console.log("🟢 STEP 2.1: Video metadata fetch starting");
                         console.log(`[Background] [Project ${project.id}] Fetching video duration...`);
                         const { getVideoDuration } = await import('@/lib/youtube/audio-extractor');
+                        console.log("🟢 STEP 2.2: getVideoDuration function imported");
                         durationSeconds = await getVideoDuration(videoId!);
+                        console.log("🟢 STEP 2.3: Video duration retrieved:", durationSeconds);
                         console.log(`[Background] [Project ${project.id}] Video duration: ${durationSeconds}s`);
                     } catch (err) {
                         console.error(`[Background] [Project ${project.id}] Duration fetch failed:`, err);
+                        console.log("🟢 FAILURE BUCKET 1.1: Metadata fetch error");
                         await updateProgress(1, 0, 'Failed to retrieve video metadata. Double check the URL.', 'failed');
                         return;
                     }
 
                     // 2. Validate Usage (Slow)
+                    console.log("🟢 STEP 2.4: Usage check starting");
                     const usageCheck = await canProcessVideo(user.id, durationSeconds);
+                    console.log("🟢 STEP 2.5: Usage check completed. Allowed:", usageCheck.allowed);
                     if (!usageCheck.allowed) {
                         console.warn(`[Background] Insufficient minutes for user ${user.id} (Project: ${project.id})`);
                         await db.update(projects)
@@ -155,6 +164,7 @@ export async function POST(req: NextRequest) {
 
                             // Final Atomic Transaction
                             const processedMinutes = Math.ceil(durationSeconds / 60);
+                            console.log("DB write starting");
                             await db.transaction(async (tx) => {
                                 await tx.insert(timestamps).values(timestampRecords);
 
@@ -173,6 +183,8 @@ export async function POST(req: NextRequest) {
 
                                 await deductMinutes(user.id, durationSeconds || 60, tx);
                             });
+                            console.log("DB write successful");
+                            console.log("🟢 STEP 10: Project marked completed");
 
                             console.log(`[Background] [Project ${project.id}] Fast path successful`);
                             return;
@@ -215,6 +227,7 @@ export async function POST(req: NextRequest) {
 
                         const processedMinutes = Math.ceil(phase1Result.processedSeconds / 60);
 
+                        console.log("DB write starting");
                         await db.transaction(async (tx) => {
                             if (timestampRecords.length > 0) {
                                 await tx.insert(timestamps).values(timestampRecords);
@@ -235,6 +248,8 @@ export async function POST(req: NextRequest) {
 
                             await deductMinutes(user.id, phase1Result.processedSeconds, tx);
                         });
+                        console.log("DB write successful");
+                        console.log("🟢 STEP 10: Project marked completed");
 
                         console.log(`[Background] Project ${project.id} successful`);
                         return;
@@ -263,6 +278,7 @@ export async function POST(req: NextRequest) {
                         const totalProcessedSeconds = phase1Result.processedSeconds + phase2Result.processedSeconds;
                         const processedMinutes = Math.ceil(totalProcessedSeconds / 60);
 
+                        console.log("DB write starting");
                         await db.transaction(async (tx) => {
                             // Phase 1 timestamps already inserted? No, we didn't insert them yet in the slow path logic above.
                             // Wait, looking at the code above:
@@ -289,6 +305,8 @@ export async function POST(req: NextRequest) {
 
                             await deductMinutes(user.id, totalProcessedSeconds, tx);
                         });
+                        console.log("DB write successful");
+                        console.log("🟢 STEP 10: Project marked completed");
                     }
 
                 } catch (error: any) {

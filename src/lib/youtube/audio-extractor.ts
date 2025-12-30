@@ -22,14 +22,15 @@ export async function extractAudio(
     durationSeconds?: number
 ): Promise<AudioExtractionResult> {
     const projectRoot = process.cwd();
-    // Path to the local binary we downloaded
     const YTDLP_PATH = path.join(projectRoot, 'bin', 'yt-dlp');
+    console.log("Dependency available: yt-dlp", fs.existsSync(YTDLP_PATH));
     const RELATIVE_FFMPEG_PATH = path.join(projectRoot, 'node_modules', 'ffmpeg-static', 'ffmpeg');
 
     let resolvedFfmpegPath = RELATIVE_FFMPEG_PATH;
     if (!fs.existsSync(resolvedFfmpegPath)) {
         resolvedFfmpegPath = ffmpegStatic || 'ffmpeg';
     }
+    console.log("Dependency available: FFmpeg", fs.existsSync(resolvedFfmpegPath));
 
     console.log('[AudioExtractor] Using FFmpeg at:', resolvedFfmpegPath);
     ffmpeg.setFfmpegPath(resolvedFfmpegPath);
@@ -38,6 +39,8 @@ export async function extractAudio(
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
     return new Promise((resolve, reject) => {
+        console.log("🟢 STEP 3: Audio extraction started");
+        console.log("Audio file path:", tempFilePath);
         console.log(`[AudioExtractor] Starting yt-dlp extraction for ${videoId}`);
 
         // Construct yt-dlp command to stream best audio to stdout
@@ -92,6 +95,8 @@ export async function extractAudio(
                 reject(new Error(`Extraction failed: ${err.message}${ytdlpError ? ' | ' + ytdlpError : ''}`));
             })
             .on('end', () => {
+                console.log("🟢 STEP 4: Audio extraction completed");
+                console.log("File exists:", fs.existsSync(tempFilePath));
                 console.log('[AudioExtractor] Extraction complete:', tempFilePath);
                 resolve({
                     filePath: tempFilePath,
