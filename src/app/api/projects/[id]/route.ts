@@ -50,8 +50,9 @@ export async function GET(
         // Explicitly map as some environments/configs might return the object differently
         return NextResponse.json({
             ...project,
-            progress: project.progress,
-            statusDescription: project.statusDescription,
+            progress_percent: project.progressPercent,
+            progress_step: project.progressStep,
+            progress_message: project.progressMessage,
             status: project.status,
             id: project.id
         });

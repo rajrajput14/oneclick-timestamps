@@ -5,10 +5,10 @@ import { Card } from '@/components/ui/Card';
 
 interface ProcessingViewProps {
     progress: {
-        percent: number;
-        description: string;
+        progress_percent: number;
+        progress_message: string;
         status: string;
-        step?: number;
+        progress_step: number;
         processedMinutes?: number;
     };
 }
@@ -21,7 +21,7 @@ const STEPS = [
 
 export function ProcessingView({ progress }: ProcessingViewProps) {
     const isCompleted = progress.status === 'completed';
-    const currentStep = progress.step || 1;
+    const currentStep = progress.progress_step || 1;
 
     return (
         <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -33,12 +33,12 @@ export function ProcessingView({ progress }: ProcessingViewProps) {
                         <span>{isCompleted ? 'Processing Done' : `Step ${currentStep}: ${STEPS[currentStep - 1]?.label}`}</span>
                     </div>
                     <h4 className="text-xl font-black uppercase tracking-tight text-foreground line-clamp-1">
-                        {isCompleted ? 'Project completed successfully' : progress.description}
+                        {isCompleted ? 'Project completed successfully' : progress.progress_message}
                     </h4>
                 </div>
                 <div className="flex flex-col items-end">
                     <span className="text-3xl font-black tracking-tighter text-indigo-500 drop-shadow-sm">
-                        {progress.percent}%
+                        {progress.progress_percent}%
                     </span>
                     <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground opacity-50">
                         {isCompleted ? 'Finalized' : 'Progress'}
@@ -50,7 +50,7 @@ export function ProcessingView({ progress }: ProcessingViewProps) {
             <div className="relative h-6 w-full bg-secondary rounded-full overflow-hidden border border-border p-1">
                 <div
                     className={`h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_25px_rgba(79,70,229,0.3)] relative ${isCompleted ? 'bg-green-500' : 'bg-indigo-600'}`}
-                    style={{ width: `${Math.max(progress.percent, 2)}%` }}
+                    style={{ width: `${Math.max(progress.progress_percent, 2)}%` }}
                 >
                     {!isCompleted && (
                         <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" style={{ backgroundSize: '200% 100%' }} />
@@ -106,7 +106,7 @@ export function ProcessingView({ progress }: ProcessingViewProps) {
                     </div>
                 ) : (
                     <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-400 leading-relaxed text-center opacity-90 animate-pulse">
-                        {progress.description || "Synthesizing industry-grade results..."}
+                        {progress.progress_message || "Synthesizing industry-grade results..."}
                     </p>
                 )}
             </Card>

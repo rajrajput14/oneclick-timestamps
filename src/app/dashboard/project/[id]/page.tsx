@@ -9,6 +9,7 @@ import Link from 'next/link';
 import GenerateTimestampsButton from '@/components/output/GenerateTimestampsButton';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import ProcessingWrapper from '@/components/dashboard/ProcessingWrapper';
 
 export default async function ProjectPage(props: { params: Promise<{ id: string }> }) {
     const { id } = await props.params;
@@ -75,7 +76,7 @@ export default async function ProjectPage(props: { params: Promise<{ id: string 
                         <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground/40 italic">
                             CREATED {new Date(project.createdAt || '').toLocaleDateString('en-US', { month: 'long', day: 'numeric' }).toUpperCase()}
                         </span>
-                        {project.statusDescription?.includes('Refining') && (
+                        {project.progressMessage?.includes('Refining') && (
                             <div className="flex items-center gap-3 animate-pulse bg-indigo-500/10 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-indigo-500 border border-indigo-500/20">
                                 <div className="w-2 h-2 bg-indigo-500 rounded-full" />
                                 Refining in background...
@@ -118,15 +119,9 @@ export default async function ProjectPage(props: { params: Promise<{ id: string 
             )}
 
             {/* Processing State */}
-            {project.status === 'processing' && (
-                <div className="p-32 rounded-[4rem] glass text-center flex flex-col items-center justify-center relative overflow-hidden shadow-2xl border-border">
-                    <div className="absolute top-0 left-0 w-full h-1.5 bg-indigo-500/10 animate-pulse" />
-                    <div className="w-40 h-40 rounded-[2.5rem] glass-darker flex items-center justify-center mb-16 relative border border-border/50">
-                        <div className="absolute inset-0 rounded-[2.5rem] border-4 border-indigo-500/10 animate-ping" />
-                        <span className="text-6xl animate-bounce">🧵</span>
-                    </div>
-                    <h3 className="text-4xl font-black uppercase tracking-tighter mb-6 text-foreground leading-none">Understanding your video</h3>
-                    <p className="text-muted-foreground text-lg font-bold opacity-60 max-w-md uppercase tracking-wide">Almost done...</p>
+            {(project.status === 'processing' || project.status === 'pending') && (
+                <div className="max-w-2xl mx-auto">
+                    <ProcessingWrapper initialProject={project} />
                 </div>
             )}
 

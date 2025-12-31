@@ -16,8 +16,14 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Project } from '@/lib/db/schema';
 
+interface ProjectWithProgress extends Project {
+    progress_percent?: number;
+    progress_message?: string;
+    progress_step?: number;
+}
+
 export default function RecentProjects({ userId }: { userId: string }) {
-    const [projects, setProjects] = useState<Project[]>([]);
+    const [projects, setProjects] = useState<ProjectWithProgress[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isDeleting, setIsDeleting] = useState(false);
@@ -38,8 +44,8 @@ export default function RecentProjects({ userId }: { userId: string }) {
 
     useEffect(() => {
         fetchProjects();
-        // Poll every 10 seconds for dashboard updates
-        const interval = setInterval(fetchProjects, 10000);
+        // Poll every 3 seconds for dashboard updates (as per real-time requirement)
+        const interval = setInterval(fetchProjects, 3000);
         return () => clearInterval(interval);
     }, [fetchProjects]);
 
@@ -94,7 +100,7 @@ export default function RecentProjects({ userId }: { userId: string }) {
     const completedProjects = projects.filter(p => p.status === 'completed');
     const inProgressProjects = projects.filter(p => p.status === 'processing' || p.status === 'pending' || p.status === 'failed');
 
-    const renderProjectGrid = (projectList: Project[], title: string) => (
+    const renderProjectGrid = (projectList: ProjectWithProgress[], title: string) => (
         <div className="space-y-10">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                 <div className="flex items-center gap-3">
@@ -106,7 +112,7 @@ export default function RecentProjects({ userId }: { userId: string }) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-                {projectList.map((project) => {
+                {projectList.map((project: ProjectWithProgress) => {
                     const isSelected = selectedIds.has(project.id);
                     const isCompleted = project.status === 'completed';
                     const isFailed = project.status === 'failed';
@@ -158,16 +164,18 @@ export default function RecentProjects({ userId }: { userId: string }) {
                                 </div>
 
                                 {!isCompleted && (
-                                    <div className="mt-8 space-y-2">
-                                        <div className="flex justify-between text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">
-                                            <span>{isFailed ? 'Processing Failed' : 'Real-time Progress'}</span>
-                                            <span>{project.progress || 0}%</span>
-                                        </div>
-                                        <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
-                                            <div
-                                                className={`h-full transition-all duration-1000 ${isFailed ? 'bg-red-500' : 'bg-indigo-500'}`}
-                                                style={{ width: `${project.progress || 0}%` }}
-                                            />
+                                    <div className="mt-8 space-y-3">
+                                        <div className="flex flex-col gap-1.5">
+                                            <div className="flex justify-between text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">
+                                                <span>{isFailed ? 'Processing Failed' : (project.progress_message || 'In Progress')}</span>
+                                                <span className="text-indigo-500">{project.progress_percent || 0}%</span>
+                                            </div>
+                                            <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden p-[1px] border border-white/5">
+                                                <div
+                                                    className={`h-full rounded-full transition-all duration-1000 ${isFailed ? 'bg-red-500' : 'bg-indigo-600'}`}
+                                                    style={{ width: `${project.progress_percent || 0}%` }}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 )}

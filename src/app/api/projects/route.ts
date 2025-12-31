@@ -27,13 +27,14 @@ export async function GET(req: NextRequest) {
         }
 
         // Fetch all projects for user
-        const userProjects = await db.query.projects.findMany({
-            where: eq(projects.userId, user.id),
-            orderBy: [desc(projects.createdAt)],
-            limit: 50,
-        });
+        const mappedProjects = userProjects.map(p => ({
+            ...p,
+            progress_percent: p.progressPercent,
+            progress_step: p.progressStep,
+            progress_message: p.progressMessage,
+        }));
 
-        return NextResponse.json(userProjects);
+        return NextResponse.json(mappedProjects);
     } catch (error) {
         console.error('Error fetching projects:', error);
         return NextResponse.json(
