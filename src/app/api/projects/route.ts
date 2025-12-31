@@ -27,6 +27,13 @@ export async function GET(req: NextRequest) {
         }
 
         // Fetch all projects for user
+        // Fetch all projects for user
+        const userProjects = await db.query.projects.findMany({
+            where: eq(projects.userId, user.id),
+            orderBy: [desc(projects.createdAt)],
+            limit: 50,
+        });
+
         const mappedProjects = userProjects.map(p => ({
             ...p,
             progress_percent: p.progressPercent,
