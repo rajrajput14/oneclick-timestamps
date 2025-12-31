@@ -8,10 +8,10 @@ import { ProcessingView } from './ProcessingView';
 import { FeedbackView } from './FeedbackView';
 
 interface ProgressState {
-    percent: number;
-    description: string;
+    progress_percent: number;
+    progress_message: string;
     status: string;
-    step?: number;
+    progress_step: number;
     processedMinutes?: number;
 }
 
@@ -24,53 +24,23 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
     const [mode, setMode] = useState<InputMode>('url');
     const [error, setError] = useState<{ title: string, message: string } | null>(null);
     const [projectId, setProjectId] = useState<string | null>(null);
-    const [visualPercent, setVisualPercent] = useState(0);
     const [progress, setProgress] = useState<ProgressState>({
-        percent: 0,
-        description: 'Synchronizing with Neural Grid...',
+        progress_percent: 0,
+        progress_message: 'Synchronizing with Neural Grid...',
         status: 'pending',
-        step: 1
+        progress_step: 1
     });
 
-    // Neural Creep Logic: Never let the user see a frozen bar
-    useEffect(() => {
-        if (view !== 'processing' || progress.status === 'completed' || progress.status === 'failed') {
-            return;
-        }
-
-        const interval = setInterval(() => {
-            setVisualPercent(prev => {
-                const realProgress = progress.percent;
-                // If visual is way behind real progress, jump to catch up
-                if (realProgress > prev + 5) return prev + 2;
-
-                // Otherwise, creep slowly if we're under 99%
-                if (prev < 99) {
-                    // Slower creep as we get higher
-                    const increment = prev > 90 ? 0.05 : 0.2;
-                    return Math.min(99, prev + increment);
-                }
-                return prev;
-            });
-        }, 500);
-
-        return () => clearInterval(interval);
-    }, [view, progress.percent, progress.status]);
-
-    // Sync visualPercent with progress when progress jumps significantly
-    useEffect(() => {
-        if (progress.percent > visualPercent) {
-            setVisualPercent(progress.percent);
-        }
-    }, [progress.percent]);
+    // Simplified: No optimistic creep. Progress is 100% backend driven.
 
     const startProcessing = async (input: string | File) => {
         setView('processing');
         setError(null);
         setProgress({
-            percent: 2,
-            description: typeof input === 'string' ? 'Checking video link...' : 'Verifying transcript file...',
-            status: 'processing'
+            progress_percent: 2,
+            progress_message: typeof input === 'string' ? 'Checking video link...' : 'Verifying transcript file...',
+            status: 'processing',
+            progress_step: 1
         });
 
         try {
@@ -123,10 +93,10 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
                 const project = await res.json();
 
                 setProgress({
-                    percent: project.progress || 0,
-                    description: project.statusDescription || 'Processing...',
+                    progress_percent: project.progress_percent ?? project.progressPercent ?? 0,
+                    progress_message: project.progress_message ?? project.progressMessage ?? 'Processing...',
                     status: project.status,
-                    step: project.progressStep || 1,
+                    progress_step: project.progress_step ?? project.progressStep ?? 1,
                     processedMinutes: project.processedMinutes
                 });
 
@@ -201,7 +171,7 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
             )}
 
             {view === 'processing' && (
-                <ProcessingView progress={{ ...progress, percent: Math.round(visualPercent) }} />
+                <ProcessingView progress={progress} />
             )}
 
             {view === 'error' && error && (
