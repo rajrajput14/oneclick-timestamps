@@ -64,10 +64,8 @@ export async function runSTTPipeline(
         // Gemini prompt with sampled segments
         const segmentationPrompt = `${STT_SEGMENTATION_SYSTEM_PROMPT}\n\n${STT_SEGMENTATION_USER_PROMPT(segments.slice(0, 1000), language)}`;
 
-        console.log("🟢 STEP 7: Timestamp generation started");
         const result = await model.generateContent(segmentationPrompt);
         const responseText = result.response.text();
-        console.log("🟢 STEP 8: Timestamp generation completed");
 
         const jsonMatch = responseText.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {

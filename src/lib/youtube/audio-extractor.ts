@@ -23,14 +23,12 @@ export async function extractAudio(
 ): Promise<AudioExtractionResult> {
     const projectRoot = process.cwd();
     const YTDLP_PATH = path.join(projectRoot, 'bin', 'yt-dlp');
-    console.log("Dependency available: yt-dlp", fs.existsSync(YTDLP_PATH));
     const RELATIVE_FFMPEG_PATH = path.join(projectRoot, 'node_modules', 'ffmpeg-static', 'ffmpeg');
 
     let resolvedFfmpegPath = RELATIVE_FFMPEG_PATH;
     if (!fs.existsSync(resolvedFfmpegPath)) {
         resolvedFfmpegPath = ffmpegStatic || 'ffmpeg';
     }
-    console.log("Dependency available: FFmpeg", fs.existsSync(resolvedFfmpegPath));
 
     console.log('[AudioExtractor] Using FFmpeg at:', resolvedFfmpegPath);
     ffmpeg.setFfmpegPath(resolvedFfmpegPath);
@@ -39,8 +37,6 @@ export async function extractAudio(
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
     return new Promise((resolve, reject) => {
-        console.log("🟢 STEP 3: Audio extraction started");
-        console.log("Audio file path:", tempFilePath);
         console.log(`[AudioExtractor] Starting yt-dlp extraction for ${videoId}`);
 
         // Construct yt-dlp command to stream best audio to stdout
@@ -51,7 +47,7 @@ export async function extractAudio(
             '--no-playlist',
             '--no-warnings',
             '--no-check-certificate',
-            '--no-interactive',
+            '--ffmpeg-location', resolvedFfmpegPath,
             '--no-cache-dir',
             '--cache-dir', '/tmp/yt-dlp-cache',
             '-o', '-',
@@ -95,8 +91,6 @@ export async function extractAudio(
                 reject(new Error(`Extraction failed: ${err.message}${ytdlpError ? ' | ' + ytdlpError : ''}`));
             })
             .on('end', () => {
-                console.log("🟢 STEP 4: Audio extraction completed");
-                console.log("File exists:", fs.existsSync(tempFilePath));
                 console.log('[AudioExtractor] Extraction complete:', tempFilePath);
                 resolve({
                     filePath: tempFilePath,
@@ -151,16 +145,24 @@ export async function getVideoDuration(videoId: string): Promise<number> {
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
     return new Promise((resolve, reject) => {
+        // Find ffmpeg path for yt-dlp
+        const projectRoot = process.cwd();
+        const RELATIVE_FFMPEG_PATH = path.join(projectRoot, 'node_modules', 'ffmpeg-static', 'ffmpeg');
+        let resolvedPath = RELATIVE_FFMPEG_PATH;
+        if (!fs.existsSync(resolvedPath)) {
+            resolvedPath = ffmpegStatic || 'ffmpeg';
+        }
+
         const timeout = setTimeout(() => {
             ytdlp.kill();
-            reject(new Error('Video duration check timed out after 30 seconds'));
-        }, 30000);
+            reject(new Error('Video duration check timed out after 120 seconds'));
+        }, 120000);
 
         const ytdlp = spawn(YTDLP_PATH, [
             '--print', 'duration',
             '--no-playlist',
-            '--no-interactive',
             '--no-check-certificate',
+            '--ffmpeg-location', resolvedPath,
             '--no-cache-dir',
             '--cache-dir', '/tmp/yt-dlp-cache',
             youtubeUrl

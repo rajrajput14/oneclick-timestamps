@@ -98,53 +98,36 @@ export async function POST(req: NextRequest) {
                 };
 
                 try {
-                    await updateProgress(1, 5, 'Job Accepted', 'processing');
+                    await updateProgress(1, 5, 'Analyzing Video Signals...', 'processing');
                     // 1. Fetch Metadata (Slow)
                     let durationSeconds = 0;
                     try {
-                        console.log("🟢 STEP 2.1: Video metadata fetch starting");
-                        console.log(`[Background] [Project ${project.id}] Fetching video duration...`);
                         const { getVideoDuration } = await import('@/lib/youtube/audio-extractor');
-                        console.log("🟢 STEP 2.2: getVideoDuration function imported");
                         durationSeconds = await getVideoDuration(videoId!);
-                        console.log("🟢 STEP 2.3: Video duration retrieved:", durationSeconds);
-                        console.log(`[Background] [Project ${project.id}] Video duration: ${durationSeconds}s`);
                     } catch (err) {
                         console.error(`[Background] [Project ${project.id}] Duration fetch failed:`, err);
-                        console.log("🟢 FAILURE BUCKET 1.1: Metadata fetch error");
-                        await updateProgress(1, 0, 'Failed to retrieve video metadata. Double check the URL.', 'failed');
+                        await updateProgress(1, 0, 'Link unreachable. Check the URL.', 'failed');
                         return;
                     }
 
                     // 2. Validate Usage (Slow)
-                    console.log("🟢 STEP 2.4: Usage check starting");
                     const usageCheck = await canProcessVideo(user.id, durationSeconds);
-                    console.log("🟢 STEP 2.5: Usage check completed. Allowed:", usageCheck.allowed);
                     if (!usageCheck.allowed) {
-                        console.warn(`[Background] Insufficient minutes for user ${user.id} (Project: ${project.id})`);
-                        await db.update(projects)
-                            .set({
-                                status: 'failed',
-                                statusDescription: 'Insufficient credits.',
-                                progressStep: 1,
-                                progress: 0,
-                                errorMessage: `This video requires ${Math.round(durationSeconds / 60)} minutes. You have ${usageCheck.remainingMinutes} minutes left.`,
-                                updatedAt: new Date()
-                            })
-                            .where(eq(projects.id, project.id));
+                        await updateProgress(1, 0, 'Insufficient credits for this video.', 'failed');
                         return;
                     }
+
+                    await updateProgress(1, 20, 'Signal acquired.');
 
                     const PHASE1_DURATION = 1200; // 20 minutes
                     const isLongVideo = durationSeconds > PHASE1_DURATION;
 
                     // --- TRY YOUTUBE TRANSCRIPT FIRST (FAST FALLBACK) ---
-                    await updateProgress(1, 15, 'Checking for available captions...');
                     const ytTranscriptData = await fetchYouTubeTranscript(videoId!);
 
                     if (ytTranscriptData) {
                         console.log(`[Background] [Project ${project.id}] Found YouTube captions. Using fast path.`);
-                        await updateProgress(2, 50, 'Captions found. Analyzing content...');
+                        await updateProgress(2, 50, 'Analyzing Speech Synthesis...');
 
                         const generatedTimestamps = await generateTimestampsFromText(
                             ytTranscriptData.transcript,
@@ -152,7 +135,7 @@ export async function POST(req: NextRequest) {
                         );
 
                         if (generatedTimestamps && generatedTimestamps.length > 0) {
-                            await updateProgress(3, 90, 'Finalizing chapters...');
+                            await updateProgress(3, 90, 'Applying Neural Enhancements...');
 
                             const timestampRecords = generatedTimestamps.map((ts: { time: string; title: string }, index: number) => ({
                                 projectId: project.id,
@@ -164,7 +147,6 @@ export async function POST(req: NextRequest) {
 
                             // Final Atomic Transaction
                             const processedMinutes = Math.ceil(durationSeconds / 60);
-                            console.log("DB write starting");
                             await db.transaction(async (tx) => {
                                 await tx.insert(timestamps).values(timestampRecords);
 
@@ -173,7 +155,7 @@ export async function POST(req: NextRequest) {
                                         status: 'completed',
                                         progress: 100,
                                         progressStep: 3,
-                                        statusDescription: 'Completed',
+                                        statusDescription: 'Success',
                                         language: 'English',
                                         transcript: ytTranscriptData.transcript,
                                         processedMinutes,
@@ -183,8 +165,6 @@ export async function POST(req: NextRequest) {
 
                                 await deductMinutes(user.id, durationSeconds || 60, tx);
                             });
-                            console.log("DB write successful");
-                            console.log("🟢 STEP 10: Project marked completed");
 
                             console.log(`[Background] [Project ${project.id}] Fast path successful`);
                             return;
@@ -192,14 +172,11 @@ export async function POST(req: NextRequest) {
                     }
 
                     // --- FALLBACK TO STT PIPELINE (SLOW PATH) ---
-                    console.log(`[Background] [Project ${project.id}] No YouTube captions found or AI failed. Rolling out STT Pipeline...`);
-                    await updateProgress(1, 20, 'Starting deep audio analysis...');
-                    await updateProgress(1, 33, 'Extracting audio layers...');
+                    await updateProgress(2, 25, 'Decoding Audio Streams...');
 
-                    console.log(`[Background] [Project ${project.id}] Running STT Pipeline (Phase 1)...`);
                     const phase1Result = await runSTTPipeline(videoId!, async (p, d) => {
-                        // Map internal STT progress to Step 2 (34-66%)
-                        const mappedPercent = Math.floor(34 + (p * 0.32));
+                        // Map internal STT progress to Step 2 (26-79%)
+                        const mappedPercent = Math.floor(26 + (p * 0.53));
                         await updateProgress(2, mappedPercent, d, 'processing');
                     }, {
                         durationSeconds: isLongVideo ? PHASE1_DURATION : undefined,
@@ -207,8 +184,7 @@ export async function POST(req: NextRequest) {
                     });
                     console.log(`[Background] [Project ${project.id}] Phase 1 complete. Found ${phase1Result.timestamps.length} timestamps.`);
 
-                    await updateProgress(2, 66, 'Speech processing segment 1 complete...');
-                    await updateProgress(3, 85, 'Structuring topics with AI...');
+                    await updateProgress(3, 80, 'Synthesizing Neural Chapters...');
 
                     let timestampRecords: any[] = [];
                     if (phase1Result.timestamps && phase1Result.timestamps.length > 0) {
@@ -227,7 +203,6 @@ export async function POST(req: NextRequest) {
 
                         const processedMinutes = Math.ceil(phase1Result.processedSeconds / 60);
 
-                        console.log("DB write starting");
                         await db.transaction(async (tx) => {
                             if (timestampRecords.length > 0) {
                                 await tx.insert(timestamps).values(timestampRecords);
@@ -238,7 +213,7 @@ export async function POST(req: NextRequest) {
                                     status: 'completed',
                                     progress: 100,
                                     progressStep: 3,
-                                    statusDescription: 'Completed',
+                                    statusDescription: 'Success',
                                     language: phase1Result.language,
                                     transcript: 'Transcript generated via STT.',
                                     processedMinutes,
@@ -248,8 +223,6 @@ export async function POST(req: NextRequest) {
 
                             await deductMinutes(user.id, phase1Result.processedSeconds, tx);
                         });
-                        console.log("DB write successful");
-                        console.log("🟢 STEP 10: Project marked completed");
 
                         console.log(`[Background] Project ${project.id} successful`);
                         return;
@@ -278,7 +251,6 @@ export async function POST(req: NextRequest) {
                         const totalProcessedSeconds = phase1Result.processedSeconds + phase2Result.processedSeconds;
                         const processedMinutes = Math.ceil(totalProcessedSeconds / 60);
 
-                        console.log("DB write starting");
                         await db.transaction(async (tx) => {
                             // Phase 1 timestamps already inserted? No, we didn't insert them yet in the slow path logic above.
                             // Wait, looking at the code above:
@@ -297,7 +269,7 @@ export async function POST(req: NextRequest) {
                                     status: 'completed',
                                     progress: 100,
                                     progressStep: 3,
-                                    statusDescription: 'Refinement complete.',
+                                    statusDescription: 'Success',
                                     processedMinutes,
                                     updatedAt: new Date()
                                 })
@@ -305,8 +277,6 @@ export async function POST(req: NextRequest) {
 
                             await deductMinutes(user.id, totalProcessedSeconds, tx);
                         });
-                        console.log("DB write successful");
-                        console.log("🟢 STEP 10: Project marked completed");
                     }
 
                 } catch (error: any) {
