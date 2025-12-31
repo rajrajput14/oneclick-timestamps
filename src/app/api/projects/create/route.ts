@@ -86,8 +86,8 @@ export async function POST(req: NextRequest) {
             // In a real prod environment, use a Queue (Inngest, Upstash QStash, or Vercel waitUntil).
             const runBackgroundWork = async () => {
                 console.log(`[Background] Job ${project.id} STARTED via nextTick/setTimeout`);
-                const updateProjectProgress = async (step: number, percent: number, message: string, status: string = 'processing') => {
-                    console.log(`[Progress Update] Project ${project.id} - Step ${step}: ${percent}% - ${message}`);
+                const updateProjectProgress = async (step: number, percent: number, message: string, status: string = 'processing', errorMsg: string | null = null) => {
+                    console.log(`[Progress Update] Project ${project.id} - Step ${step}: ${percent}% - ${message} ${status === 'failed' ? '(FAILED)' : ''}`);
                     try {
                         await db.update(projects)
                             .set({
@@ -95,6 +95,7 @@ export async function POST(req: NextRequest) {
                                 progressPercent: percent,
                                 progressMessage: message,
                                 status,
+                                errorMessage: errorMsg,
                                 updatedAt: new Date()
                             })
                             .where(eq(projects.id, project.id));
@@ -117,7 +118,7 @@ export async function POST(req: NextRequest) {
                     // 2. Validate Usage
                     const usageCheck = await canProcessVideo(user.id, durationSeconds);
                     if (!usageCheck.allowed) {
-                        await updateProjectProgress(1, 0, 'Insufficient credits for this video.', 'failed');
+                        await updateProjectProgress(1, 0, 'Insufficient credits', 'failed', 'Insufficient credits for this video.');
                         return;
                     }
 
@@ -229,7 +230,7 @@ export async function POST(req: NextRequest) {
 
                 } catch (error: any) {
                     console.error(`[Project Failure] Project ${project.id}:`, error);
-                    await updateProjectProgress(1, 0, error.message || 'Processing failed.', 'failed');
+                    await updateProjectProgress(1, 0, 'Processing failed', 'failed', error.message || 'Unknown processing error');
                 }
             };
 
@@ -269,8 +270,8 @@ export async function POST(req: NextRequest) {
             // 3. Launch processing in background
             const runTranscriptBackground = async () => {
                 console.log(`[Background] Transcript Job ${project.id} STARTED`);
-                const updateProjectProgress = async (step: number, percent: number, message: string, status: string = 'processing') => {
-                    console.log(`[Transcript Progress] ${project.id} - Step ${step}: ${percent}% - ${message}`);
+                const updateProjectProgress = async (step: number, percent: number, message: string, status: string = 'processing', errorMsg: string | null = null) => {
+                    console.log(`[Transcript Progress] ${project.id} - Step ${step}: ${percent}% - ${message} ${status === 'failed' ? '(FAILED)' : ''}`);
                     try {
                         await db.update(projects)
                             .set({
@@ -278,6 +279,7 @@ export async function POST(req: NextRequest) {
                                 progressPercent: percent,
                                 progressMessage: message,
                                 status,
+                                errorMessage: errorMsg,
                                 updatedAt: new Date()
                             })
                             .where(eq(projects.id, project.id));
@@ -337,7 +339,7 @@ export async function POST(req: NextRequest) {
 
                 } catch (error: any) {
                     console.error(`[Transcript Failure] ${project.id}:`, error);
-                    await updateProjectProgress(1, 0, error.message || 'Synthesis failed.', 'failed');
+                    await updateProjectProgress(1, 0, 'Synthesis failed', 'failed', error.message || 'Unknown processing error');
                 }
             };
 

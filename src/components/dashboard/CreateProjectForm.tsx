@@ -117,8 +117,8 @@ export default function CreateProjectForm({ usageAllowed, minutesRemaining }: { 
                     clearInterval(pollInterval);
                     setView('error');
                     setError({
-                        title: 'Almost done...',
-                        message: project.errorMessage || 'Something went wrong. Please try again'
+                        title: 'Processing Failed',
+                        message: project.errorMessage || project.progress_message || project.progressMessage || 'The neural grid encountered an unexpected interruption. Please try again.'
                     });
                     setProjectId(null);
                 }

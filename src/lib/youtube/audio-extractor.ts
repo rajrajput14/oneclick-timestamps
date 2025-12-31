@@ -6,6 +6,7 @@ import fs from 'fs';
 import { tmpdir } from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { SampleInterval } from './sampling';
+import { Innertube } from 'youtubei.js';
 
 export interface AudioExtractionResult {
     filePath: string;
@@ -141,13 +142,27 @@ export async function extractAudioSamples(
  * Get video duration in seconds using yt-dlp
  */
 export async function getVideoDuration(videoId: string): Promise<number> {
-    const projectRoot = process.cwd();
-    const YTDLP_PATH = path.join(projectRoot, 'bin', 'yt-dlp');
-    const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    // Primary method: youtubei.js (much faster, no process spawn)
+    try {
+        console.log(`[youtubei.js] Fetching duration for ${videoId}`);
+        const yt = await Innertube.create();
+        const video = await yt.getInfo(videoId);
+        const duration = video.basic_info.duration;
+        if (duration && duration > 0) {
+            console.log(`[youtubei.js] Success: ${duration}s`);
+            return duration;
+        }
+    } catch (e) {
+        console.warn(`[youtubei.js] Failed to fetch duration: ${e instanceof Error ? e.message : String(e)}. Falling back to yt-dlp.`);
+    }
 
+    // Fallback: yt-dlp
     return new Promise((resolve, reject) => {
-        // Find ffmpeg path for yt-dlp
         const projectRoot = process.cwd();
+        const YTDLP_PATH = path.join(projectRoot, 'bin', 'yt-dlp');
+        const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+        // Find ffmpeg path for yt-dlp
         const RELATIVE_FFMPEG_PATH = path.join(projectRoot, 'node_modules', 'ffmpeg-static', 'ffmpeg');
         let resolvedPath = RELATIVE_FFMPEG_PATH;
         if (!fs.existsSync(resolvedPath)) {
@@ -172,6 +187,8 @@ export async function getVideoDuration(videoId: string): Promise<number> {
             '--print', 'duration',
             '--no-playlist',
             '--no-check-certificate',
+            '--no-warnings',
+            '--ignore-config',
             '--ffmpeg-location', resolvedPath,
             '--no-cache-dir',
             '--cache-dir', '/tmp/yt-dlp-cache',
