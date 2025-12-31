@@ -103,8 +103,10 @@ export async function POST(req: NextRequest) {
                     await updateProjectProgress(1, 5, 'Analyzing Video Signals...');
 
                     // 1. Fetch Metadata
+                    console.log(`[Background] Project ${project.id} - Fetching video duration...`);
                     const { getVideoDuration, extractAudio } = await import('@/lib/youtube/audio-extractor');
                     durationSeconds = await getVideoDuration(videoId!);
+                    console.log(`[Background] Project ${project.id} - Duration acquired: ${durationSeconds}s`);
 
                     // 2. Validate Usage
                     const usageCheck = await canProcessVideo(user.id, durationSeconds);

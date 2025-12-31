@@ -50,6 +50,7 @@ export async function extractAudio(
             '--ffmpeg-location', resolvedFfmpegPath,
             '--no-cache-dir',
             '--cache-dir', '/tmp/yt-dlp-cache',
+            '--no-update', // Prevent hangs during self-update attempts
             '-o', '-',
             youtubeUrl
         ]);
@@ -165,12 +166,22 @@ export async function getVideoDuration(videoId: string): Promise<number> {
             '--ffmpeg-location', resolvedPath,
             '--no-cache-dir',
             '--cache-dir', '/tmp/yt-dlp-cache',
+            '--no-update', // Prevent hangs during self-update attempts
             youtubeUrl
         ]);
 
         let output = '';
+        let errorOutput = '';
+
         ytdlp.stdout.on('data', (data) => {
             output += data.toString();
+        });
+
+        ytdlp.stderr.on('data', (data) => {
+            errorOutput += data.toString();
+            // Log for visibility
+            const msg = data.toString().trim();
+            if (msg) console.log(`[yt-dlp-duration] ${msg}`);
         });
 
         ytdlp.on('close', (code) => {
@@ -180,10 +191,10 @@ export async function getVideoDuration(videoId: string): Promise<number> {
                 if (!isNaN(duration)) {
                     resolve(duration);
                 } else {
-                    reject(new Error('Failed to parse video duration'));
+                    reject(new Error(`Failed to parse video duration. Output: ${output.trim()} | Stderr: ${errorOutput.trim()}`));
                 }
             } else {
-                reject(new Error(`yt-dlp duration check failed with code ${code}`));
+                reject(new Error(`yt-dlp duration check failed with code ${code}. Stderr: ${errorOutput.trim()}`));
             }
         });
     });

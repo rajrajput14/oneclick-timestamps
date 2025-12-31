@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useUser } from '@clerk/nextjs';
 import Navbar from '@/components/layout/Navbar';
+import { FAQSection } from './FAQSection';
 
 export default function HomeClient() {
     const { isSignedIn } = useUser();
@@ -73,6 +74,8 @@ export default function HomeClient() {
                         ))}
                     </div>
                 </section>
+
+                <FAQSection />
 
                 {/* Bottom CTA */}
                 <section className="max-w-5xl mx-auto py-32">
