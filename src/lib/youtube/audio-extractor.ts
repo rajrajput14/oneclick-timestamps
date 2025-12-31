@@ -154,9 +154,18 @@ export async function getVideoDuration(videoId: string): Promise<number> {
             resolvedPath = ffmpegStatic || 'ffmpeg';
         }
 
+        const isLinux = process.platform === 'linux';
+        const isVercel = process.env.VERCEL === '1';
+
+        console.log(`[yt-dlp-duration] Platform: ${process.platform}, Vercel: ${isVercel}`);
+
+        if (isVercel && !isLinux) {
+            console.warn('[yt-dlp-duration] WARNING: Running Mach-O binary on Vercel (Linux). This will FAIL.');
+        }
+
         const timeout = setTimeout(() => {
             ytdlp.kill();
-            reject(new Error('Video duration check timed out after 120 seconds'));
+            reject(new Error(`Video duration check timed out after 120 seconds. Platform: ${process.platform}`));
         }, 120000);
 
         const ytdlp = spawn(YTDLP_PATH, [

@@ -15,6 +15,7 @@ import { timestampToSeconds } from '@/lib/utils/timestamps';
 import { eq } from 'drizzle-orm';
 import fs from 'fs';
 import path from 'path';
+import { waitUntil } from '@vercel/functions';
 
 /**
  * Create new project and process timestamp generation
@@ -78,8 +79,13 @@ export async function POST(req: NextRequest) {
                 })
                 .returning();
 
-            // [BACKGROUND PROCESS] Defer heavy lifting to avoid Vercel timeouts
-            setTimeout(async () => {
+            // [BACKGROUND PROCESS] 
+            console.log(`[API/Create] Dispatching background job for Project ${project.id}`);
+
+            // Note: On Vercel, setTimeout is unreliable after response is sent.
+            // In a real prod environment, use a Queue (Inngest, Upstash QStash, or Vercel waitUntil).
+            const runBackgroundWork = async () => {
+                console.log(`[Background] Job ${project.id} STARTED via nextTick/setTimeout`);
                 const updateProjectProgress = async (step: number, percent: number, message: string, status: string = 'processing') => {
                     console.log(`[Progress Update] Project ${project.id} - Step ${step}: ${percent}% - ${message}`);
                     try {
@@ -225,7 +231,13 @@ export async function POST(req: NextRequest) {
                     console.error(`[Project Failure] Project ${project.id}:`, error);
                     await updateProjectProgress(1, 0, error.message || 'Processing failed.', 'failed');
                 }
-            }, 0);
+            };
+
+            // Using both to maximize chance of execution in different runtimes
+            // waitUntil is the definitive way for Vercel
+            waitUntil(runBackgroundWork());
+            process.nextTick(runBackgroundWork);
+            setTimeout(runBackgroundWork, 1);
 
             return NextResponse.json({
                 success: true,
@@ -255,7 +267,8 @@ export async function POST(req: NextRequest) {
                 .returning();
 
             // 3. Launch processing in background
-            setTimeout(async () => {
+            const runTranscriptBackground = async () => {
+                console.log(`[Background] Transcript Job ${project.id} STARTED`);
                 const updateProjectProgress = async (step: number, percent: number, message: string, status: string = 'processing') => {
                     console.log(`[Transcript Progress] ${project.id} - Step ${step}: ${percent}% - ${message}`);
                     try {
@@ -326,7 +339,11 @@ export async function POST(req: NextRequest) {
                     console.error(`[Transcript Failure] ${project.id}:`, error);
                     await updateProjectProgress(1, 0, error.message || 'Synthesis failed.', 'failed');
                 }
-            }, 0);
+            };
+
+            waitUntil(runTranscriptBackground());
+            process.nextTick(runTranscriptBackground);
+            setTimeout(runTranscriptBackground, 1);
 
             return NextResponse.json({
                 success: true,

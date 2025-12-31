@@ -24,6 +24,7 @@
     "@types/fluent-ffmpeg": "^2.1.28",
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.18.1",
+    "@vercel/functions": "^3.3.4",
     "axios": "^1.13.2",
     "busboy": "^1.6.0",
     "clsx": "^2.1.1",

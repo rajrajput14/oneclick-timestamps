@@ -19,10 +19,6 @@ const faqs = [
     {
         question: "Can I edit the generated timestamps?",
         answer: "Absolutely! Once the timestamps are generated, you can refine titles, adjust times, or add new chapters directly from the project editor before exporting to YouTube."
-    },
-    {
-        question: "How does the 'Honest Progress' bar work?",
-        answer: "Unlike other tools that use fake timers, our progress bar is 100% database-driven. It reflects the actual stage of AI processing, from audio extraction to final synthesis."
     }
 ];
 
