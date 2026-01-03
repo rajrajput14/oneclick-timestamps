@@ -23,7 +23,9 @@ export async function extractAudio(
     durationSeconds?: number
 ): Promise<AudioExtractionResult> {
     const projectRoot = process.cwd();
-    const YTDLP_PATH = path.join(projectRoot, 'bin', 'yt-dlp');
+    const isLinux = process.platform === 'linux';
+    const binaryName = isLinux ? 'yt-dlp-linux' : 'yt-dlp';
+    const YTDLP_PATH = path.join(projectRoot, 'bin', binaryName);
     const RELATIVE_FFMPEG_PATH = path.join(projectRoot, 'node_modules', 'ffmpeg-static', 'ffmpeg');
 
     let resolvedFfmpegPath = RELATIVE_FFMPEG_PATH;
@@ -159,7 +161,9 @@ export async function getVideoDuration(videoId: string): Promise<number> {
     // Fallback: yt-dlp
     return new Promise((resolve, reject) => {
         const projectRoot = process.cwd();
-        const YTDLP_PATH = path.join(projectRoot, 'bin', 'yt-dlp');
+        const isLinux = process.platform === 'linux';
+        const binaryName = isLinux ? 'yt-dlp-linux' : 'yt-dlp';
+        const YTDLP_PATH = path.join(projectRoot, 'bin', binaryName);
         const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
         // Find ffmpeg path for yt-dlp
@@ -169,14 +173,9 @@ export async function getVideoDuration(videoId: string): Promise<number> {
             resolvedPath = ffmpegStatic || 'ffmpeg';
         }
 
-        const isLinux = process.platform === 'linux';
         const isVercel = process.env.VERCEL === '1';
 
-        console.log(`[yt-dlp-duration] Platform: ${process.platform}, Vercel: ${isVercel}`);
-
-        if (isVercel && !isLinux) {
-            console.warn('[yt-dlp-duration] WARNING: Running Mach-O binary on Vercel (Linux). This will FAIL.');
-        }
+        console.log(`[yt-dlp-duration] Platform: ${process.platform}, Vercel: ${isVercel}, Binary: ${binaryName}`);
 
         const timeout = setTimeout(() => {
             ytdlp.kill();
